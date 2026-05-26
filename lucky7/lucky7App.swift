@@ -11,7 +11,7 @@ import SwiftUI
 struct lucky7App: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            VideoTestView()
         }
     }
 }
