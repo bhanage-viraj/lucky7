@@ -10,7 +10,6 @@ final class Session: Identifiable, Codable {
     
     // Configured before starting
     var duration: TimeInterval     // e.g., 1500 seconds (25 mins)
-    var appsAllowed: [AllowedApp]
     
     // Set when session starts/ends
     var startTime: Date
@@ -21,11 +20,10 @@ final class Session: Identifiable, Codable {
     
     // Note: 'breaks' array has been removed as requested.
 
-    init(id: UUID = UUID(), userId: UUID, duration: TimeInterval, appsAllowed: [AllowedApp], startTime: Date = Date(), endTime: Date? = nil, videoWrapId: UUID? = nil) {
+    init(id: UUID = UUID(), userId: UUID, duration: TimeInterval, startTime: Date = Date(), endTime: Date? = nil, videoWrapId: UUID? = nil) {
         self.id = id
         self.userId = userId
         self.duration = duration
-        self.appsAllowed = appsAllowed
         self.startTime = startTime
         self.endTime = endTime
         self.videoWrapId = videoWrapId
