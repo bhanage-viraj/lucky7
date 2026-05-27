@@ -2,14 +2,18 @@
 // Placeholder for Session model
 
 import Foundation
+import SwiftData
 
-
-final class Session: Identifiable, Codable {
-    let id: UUID
-    let userId: UUID
+@Model
+final class Session: Identifiable {
+    var id: UUID
+    var userId: UUID
     
     // Configured before starting
     var duration: TimeInterval     // e.g., 1500 seconds (25 mins)
+    var actualDuration: TimeInterval {
+        return startTime.intervalInSeconds(to: endTime ?? Date())
+    }
     
     // Set when session starts/ends
     var startTime: Date
@@ -18,14 +22,22 @@ final class Session: Identifiable, Codable {
     // Linked Media
     var videoWrapId: UUID?         // Links to the final Timelapse once generated
     
-    // Note: 'breaks' array has been removed as requested.
+    var title: String
+    var summary: String
 
-    init(id: UUID = UUID(), userId: UUID, duration: TimeInterval, startTime: Date = Date(), endTime: Date? = nil, videoWrapId: UUID? = nil) {
+    // User-uploaded activity snapshots. Stored as JPEG data outside the DB
+    // file via externalStorage so large images don't bloat the DB.
+    @Attribute(.externalStorage) var snapshotImages: [Data]
+
+    init(id: UUID = UUID(), userId: UUID, duration: TimeInterval, startTime: Date = Date(), endTime: Date? = nil, videoWrapId: UUID? = nil, title: String = "", summary: String = "", snapshotImages: [Data] = []) {
         self.id = id
         self.userId = userId
         self.duration = duration
         self.startTime = startTime
         self.endTime = endTime
         self.videoWrapId = videoWrapId
+        self.title = title
+        self.summary = summary
+        self.snapshotImages = snapshotImages
     }
 }

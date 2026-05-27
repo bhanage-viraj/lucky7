@@ -1,9 +1,10 @@
 // Models/Task.swift
-// Placeholder for Task model
+// Placeholder for SessionTask model
+// Note: renamed from `Task` to avoid shadowing Swift Concurrency's `Task`.
 
 import Foundation
 
-final class Task: Identifiable, Codable {
+final class SessionTask: Identifiable, Codable {
     let id: UUID
     let sessionId: UUID            // Foreign key linking to Session
     var description: String
