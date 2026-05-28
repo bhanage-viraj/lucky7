@@ -27,26 +27,50 @@ struct HomePage: View {
                     .frame(width: 300, height: 300)
                     Image("TrafficPole")
                         
-                    VStack{
+                    VStack(spacing: 12) {
+                        
                         TrafficShell {
-                            NumberScroller(selected: $selected)
-                        }
-                        TrafficShell {
-                            NumberScroller(selected: $selected1)
-                        }
-                        TrafficShell {
-                            NavigationLink(destination: RecordingPage()) {
-                                Text("Enter")
-                                    .font(.custom("SpecialGothicExpandedOne-Regular", size: 15))
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 10)
+                            
+                            VStack(spacing: 6) {
+                                
+                                NumberScroller(selected: $selected)
+                                    .frame(height: 55)
+                                
+                                
                             }
-
                         }
                         
+                        
+                        TrafficShell {
+                            
+                            VStack(spacing: 6) {
+                                
+                                NumberScroller(selected: $selected1)
+                                    .frame(height: 55)
+                                
+                                
+                            }
+                        }
+                        
+                        
+                        TrafficShell {
+                            
+                            NavigationLink(destination: RecordingPage()) {
+                                
+                                VStack(spacing: 4) {
+                                    
+                                    Image(systemName: "play.fill")
+                                        .font(.system(size: 20))
+                                    
+                                    Text("ENTER")
+                                        .font(.custom("Special Gothic Expanded One", size: 13))
+                                }
+                                .foregroundStyle(.white)
+                            }
+                        }
                     }
+                    .offset(x: 0, y: 150)
+                    .offset(y: -140)
                     .offset(x:0, y:150)
                     
                     .offset(y: -140)

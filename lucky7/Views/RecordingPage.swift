@@ -21,13 +21,38 @@ struct RecordingPage: View {
         
         ZStack {
             
+            
             CameraPreview(session: cameraManager.session)
                 .ignoresSafeArea()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             
+            
             VStack {
-                HStack {
-                    Spacer()
+                VStack() {
+                    
+                    
+                    
+                    // EXPAND BUTTON
+                    
+                    Button(action: {
+                        
+                        // expand action
+                        
+                    }) {
+                        
+                        Image(systemName: "arrow.down.left.and.arrow.up.right.circle.fill")
+                            .font(.system(size: 42))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.white)
+                            .background(
+                                Circle()
+                                    .fill(.black.opacity(0.35))
+                                    .frame(width: 30, height: 30)
+                            )
+                    }
+                    
+                    // CAMERA SWITCH BUTTON
+                    
                     Button(action: {
                         cameraManager.switchCamera()
                     }) {
@@ -37,8 +62,10 @@ struct RecordingPage: View {
                             .background(Color.black.opacity(0.35))
                             .clipShape(Circle())
                     }
-                    .padding()
                 }
+                .offset(x: 150, y: 0)
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
 
                 Spacer()
                 Group {
@@ -54,19 +81,41 @@ struct RecordingPage: View {
                                 .offset(x: 0, y: 200 + groupOffset)
                             
                             Image("Frame35")
-                                .offset(x: 0, y: 80 + groupOffset)
+                                .resizable()
+                                    .scaledToFit() // or .scaledToFill()
+                                    .frame(width: 300, height: 250)
+                                    .offset(x: 0, y: 70 + groupOffset)
+                                
+                                
                             
-                            HStack(spacing: -30) {
+                            HStack(spacing: -50) {
                                 
                                 TrafficShell {
-                                    Text("2\nHours")
-                                        .foregroundColor(.white)
+                                    
+                                    VStack(spacing: 2) {
+                                        
+                                        Text("2")
+                                            .font(.custom("Special Gothic Expanded One", size: 34))
+                                        
+                                        Text("Hours")
+                                            .font(.custom("Special Gothic Expanded One", size: 10))
+                                    }
+                                    .foregroundStyle(.white)
                                 }
                                 .scaleEffect(0.70)
                                 
+                                
                                 TrafficShell {
-                                    Text("30\nMinutes")
-                                        .foregroundColor(.white)
+                                    
+                                    VStack(spacing: 2) {
+                                        
+                                        Text("30")
+                                            .font(.custom("Special Gothic Expanded One", size: 34))
+                                        
+                                        Text("Minutes")
+                                            .font(.custom("Special Gothic Expanded One", size: 10))
+                                    }
+                                    .foregroundStyle(.white)
                                 }
                                 .scaleEffect(0.70)
                                 
@@ -79,20 +128,17 @@ struct RecordingPage: View {
                                             
                                             if !hasStarted {
                                                 
-                                                // FIRST START
                                                 hasStarted = true
                                                 isRunning = true
                                                 groupOffset = 70
                                                 
                                             } else if isRunning {
                                                 
-                                                // PAUSE
                                                 isRunning = false
                                                 groupOffset = 0
                                                 
                                             } else {
                                                 
-                                                // RESUME
                                                 isRunning = true
                                                 groupOffset = 70
                                             }
@@ -100,16 +146,30 @@ struct RecordingPage: View {
                                         
                                     }) {
                                         
-                                        Text(
-                                            !hasStarted
-                                            ? "Start"
-                                            : (isRunning ? "Pause" : "Resume")
+                                        VStack(spacing: 4) {
+                                            
+                                            Image(systemName:
+                                                    !hasStarted
+                                                  ? "play.fill"
+                                                  : (isRunning ? "pause.fill" : "play.fill")
+                                            )
+                                            .font(.system(size: 20))
+                                            
+                                            Text(
+                                                !hasStarted
+                                                ? "START"
+                                                : (isRunning ? "PAUSE" : "RESUME")
+                                            )
+                                            .font(.custom("Special Gothic Expanded One", size: 13))
+                                        }
+                                        .foregroundStyle(
+                                            isRunning ? .yellow : .white
                                         )
-                                        .foregroundStyle(.white)
                                     }
                                 }
                                 .scaleEffect(0.70)
-                            }.offset(x:0, y: 80+groupOffset)
+                            }
+                            .offset(x: 0, y: 80 + groupOffset)
                             if hasStarted && !isRunning {
                                 
                                 Button(action: {
@@ -118,12 +178,7 @@ struct RecordingPage: View {
                                     
                                 }) {
                                     
-                                    Text("End")
-                                        .font(.headline)
-                                        .foregroundColor(.white)
-                                        .frame(width: 140, height: 50)
-                                        .background(Color.red)
-                                        .cornerRadius(18)
+                                    Image("End")
                                 }
                                 .offset(y: 200 + groupOffset)
                                 .transition(.move(edge: .bottom).combined(with: .opacity))
