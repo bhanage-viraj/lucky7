@@ -21,6 +21,7 @@ struct SessionDetails: View {
     @State private var sessionDescription = ""
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var uploadedSnapshots: [UIImage] = []
+    @State private var isShowingAnalytics = false
     
     // filtering only 3 frames for snapshots
     private var displayFrame: [UIImage] {
@@ -59,7 +60,7 @@ struct SessionDetails: View {
                     
                     HStack {
                         Button(action: {
-                            // Dismiss action
+                            // TODO: wire this button to pop-up modal that can delete the session
                         }) {
                             Image(systemName: "xmark")
                                 .font(.system(size: 18, weight: .heavy))
@@ -157,14 +158,14 @@ struct SessionDetails: View {
                     
                     Button(action: {
                         if let session = sessions.first(where: { $0.id == sessionId }) {
-                                session.title = sessionTitle
-                                session.summary = sessionDescription
-                                session.snapshotImages = uploadedSnapshots.compactMap {
-                                    $0.jpegData(compressionQuality: 0.8)
-                                }
-                                try? context.save()
+                            session.title = sessionTitle
+                            session.summary = sessionDescription
+                            session.snapshotImages = uploadedSnapshots.compactMap {
+                                $0.jpegData(compressionQuality: 0.8)
                             }
-                            dismiss()
+                            try? context.save()
+                        }
+                        isShowingAnalytics = true
                     }) {
                         Text("SAVE SESSION")
                             .font(.custom("Special Gothic Expanded One", size: 16))
@@ -182,6 +183,9 @@ struct SessionDetails: View {
                     .padding(.bottom, 40)
                 }
             }
+        }
+        .fullScreenCover(isPresented: $isShowingAnalytics, onDismiss: { dismiss() }) {
+            SessionAnalytics(sessionId: sessionId, videoFrames: videoFrames)
         }
     }
 }
