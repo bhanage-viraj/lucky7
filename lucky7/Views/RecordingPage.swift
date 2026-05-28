@@ -14,8 +14,9 @@ struct RecordingPage: View {
     @State private var hasStarted = false
     @State private var groupOffset: CGFloat = 0
     @State private var buttonText = "Start"
+    @State private var showFullFocusScreen = false
     
-    @StateObject private var cameraManager = CameraManager()
+    @StateObject private var cameraManager = RecordingCameraManager()
     
     var body: some View {
         
@@ -35,9 +36,7 @@ struct RecordingPage: View {
                     // EXPAND BUTTON
                     
                     Button(action: {
-                        
-                        // expand action
-                        
+                        showFullFocusScreen = true
                     }) {
                         
                         Image(systemName: "arrow.down.left.and.arrow.up.right.circle.fill")
@@ -194,6 +193,9 @@ struct RecordingPage: View {
         .onDisappear {
             cameraManager.stopSession()
         }
+        .fullScreenCover(isPresented: $showFullFocusScreen) {
+            FullFocusScreen()
+        }
     }
 }
 
@@ -259,7 +261,7 @@ class PreviewView: UIView {
 
 // MARK: - Camera Manager
 
-class CameraManager: NSObject, ObservableObject {
+class RecordingCameraManager: NSObject, ObservableObject {
     
     @Published var cameraPosition: AVCaptureDevice.Position = .front
     let session = AVCaptureSession()

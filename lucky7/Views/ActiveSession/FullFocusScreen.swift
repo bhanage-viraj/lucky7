@@ -6,7 +6,8 @@ import AVFoundation
 import Combine
 
 struct FullFocusScreen: View {
-    @StateObject private var camera = CameraManager()
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var camera = FocusCameraManager()
     @StateObject private var countdown = TimerManager()
     
     var body: some View {
@@ -44,7 +45,7 @@ struct FullFocusScreen: View {
                         Spacer()
                         
                         Button {
-                            
+                            dismiss()
                         } label: {
                             Image(systemName: "arrow.up.right.and.arrow.down.left")
                                 .foregroundColor(.white)
@@ -264,7 +265,7 @@ class PreviewUIView: UIView {
 
 // MARK: - Camera Helper
 
-class CameraManager: ObservableObject {
+class FocusCameraManager: ObservableObject {
     let session = AVCaptureSession()
     
     func start() {
