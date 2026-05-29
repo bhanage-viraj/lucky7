@@ -10,15 +10,13 @@ import SwiftData
 
 @main
 struct lucky7App: App {
-    private var dummyFrames: [UIImage] {
-        ["dummySnapshot1", "dummySnapshot2", "dummySnapshot3"]
-            .compactMap { UIImage(named: $0) }
-    }
-
     var body: some Scene {
         WindowGroup {
-            SessionDetails(sessionId: UUID(), videoFrames: dummyFrames)
+            JailbreakDemoRoot()
+                .task {
+                    await NotificationPermission.requestIfNeeded()
+                }
         }
-        .modelContainer(for: Session.self)
+        .modelContainer(for: [Session.self, Distraction.self])
     }
 }
