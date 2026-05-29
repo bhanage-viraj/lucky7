@@ -12,7 +12,7 @@ import SwiftData
 struct lucky7App: App {
     var body: some Scene {
         WindowGroup {
-            JailbreakDemoRoot()
+            Loading()
                 .task {
                     await NotificationPermission.requestIfNeeded()
                 }
