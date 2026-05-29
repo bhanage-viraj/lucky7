@@ -1,0 +1,45 @@
+# Xcode — user-specific state
+# Window layout, breakpoints, schemes you haven't shared, etc.
+# Never commit these — they're personal and cause churn for everyone else.
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad/
+
+# Xcode build output
+build/
+DerivedData/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# CocoaPods (if you ever add it)
+Pods/
+
+# Carthage (if you ever add it)
+Carthage/Build/
+
+# fastlane (if you ever add it)
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# macOS metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Misc
+*.log
