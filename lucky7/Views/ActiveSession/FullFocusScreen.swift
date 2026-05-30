@@ -6,7 +6,7 @@ import AVFoundation
 import Combine
 
 struct FullFocusScreen: View {
-    @StateObject private var camera = CameraManager()
+    @StateObject private var camera = FocusCameraManager()
     @StateObject private var countdown = TimerManager()
     
     var body: some View {
@@ -264,7 +264,7 @@ class PreviewUIView: UIView {
 
 // MARK: - Camera Helper
 
-class CameraManager: ObservableObject {
+class FocusCameraManager: ObservableObject {
     let session = AVCaptureSession()
     
     func start() {

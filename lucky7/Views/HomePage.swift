@@ -35,7 +35,9 @@ struct HomePage: View {
                             NumberScroller(selected: $selected1)
                         }
                         TrafficShell {
-                            NavigationLink(destination: RecordingPage()) {
+                            NavigationLink(destination: RecordingPage(
+                                durationSeconds: TimeInterval((selected ?? 0) * 3600 + (selected1 ?? 0) * 60)
+                            )) {
                                 Text("Enter")
                                     .font(.custom("SpecialGothicExpandedOne-Regular", size: 15))
                                     .fontWeight(.bold)

@@ -4,6 +4,9 @@
 import SwiftUI
 
 struct CrashSessionScreen: View {
+    /// Called automatically 3s after appearing (e.g. to return to HomePage).
+    var onContinue: () -> Void = {}
+
     @State private var appeared = false
     @State private var shake = false
 
@@ -72,6 +75,9 @@ struct CrashSessionScreen: View {
             .onAppear {
                 appeared = true
                 shake = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    onContinue()
+                }
             }
         }
     }

@@ -4,19 +4,43 @@
 //
 
 import SwiftUI
+import SwiftData
 import AVFoundation
 import Combine
 
 // MARK: - Main View
 
 struct RecordingPage: View {
+    /// Total focus duration in seconds (passed from HomePage selection).
+    var durationSeconds: TimeInterval = 2 * 3600 + 30 * 60
+
     @State private var isRunning = false
     @State private var hasStarted = false
     @State private var groupOffset: CGFloat = 0
     @State private var buttonText = "Start"
-    
+
     @StateObject private var cameraManager = CameraManager()
-    
+
+    // MARK: - Session / navigation state
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var remaining: TimeInterval = 0
+    @State private var sessionStartTime: Date?
+    @State private var newSessionId: UUID?
+
+    @State private var showCrash = false
+    @State private var showFinish = false
+    @State private var showDetails = false
+    @State private var goHome = false
+    @State private var pendingDetails = false
+
+    /// Fires every second; we only decrement while the session is running.
+    private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    // TODO: replace with the real signed-in user id once auth/user storage exists.
+    private let placeholderUserId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+
     var body: some View {
         
         ZStack {
@@ -78,12 +102,14 @@ struct RecordingPage: View {
                                         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                                             
                                             if !hasStarted {
-                                                
+
                                                 // FIRST START
                                                 hasStarted = true
                                                 isRunning = true
                                                 groupOffset = 70
-                                                
+                                                remaining = durationSeconds
+                                                sessionStartTime = Date()
+
                                             } else if isRunning {
                                                 
                                                 // PAUSE
@@ -113,11 +139,9 @@ struct RecordingPage: View {
                             if hasStarted && !isRunning {
                                 
                                 Button(action: {
-                                    
-                                    // surrenderScreen
-                                    
+                                    endAsCrashed()
                                 }) {
-                                    
+
                                     Text("End")
                                         .font(.headline)
                                         .foregroundColor(.white)
@@ -139,6 +163,68 @@ struct RecordingPage: View {
         .onDisappear {
             cameraManager.stopSession()
         }
+        // Countdown driver: tick only while the session is actively running.
+        .onReceive(ticker) { _ in
+            guard hasStarted, isRunning, remaining > 0 else { return }
+            remaining -= 1
+            if remaining <= 0 {
+                isRunning = false
+                finishSession()
+            }
+        }
+        // End button -> crash screen -> (after 3s) back to HomePage.
+        .fullScreenCover(isPresented: $showCrash, onDismiss: {
+            if goHome {
+                goHome = false
+                dismiss()
+            }
+        }) {
+            CrashSessionScreen(onContinue: {
+                goHome = true
+                showCrash = false
+            })
+        }
+        // Timer finished -> finish screen -> (after 3s) SessionDetails.
+        .fullScreenCover(isPresented: $showFinish, onDismiss: {
+            if pendingDetails {
+                pendingDetails = false
+                showDetails = true
+            }
+        }) {
+            FinishSessionScreen(onContinue: {
+                pendingDetails = true
+                showFinish = false
+            })
+        }
+        // SessionDetails edits the already-inserted Session; dismissing returns home.
+        .fullScreenCover(isPresented: $showDetails, onDismiss: { dismiss() }) {
+            SessionDetails(sessionId: newSessionId ?? UUID(), videoFrames: [])
+        }
+    }
+
+    // MARK: - Session lifecycle
+
+    /// User gave up mid-session: show the crash screen, no record is saved.
+    private func endAsCrashed() {
+        isRunning = false
+        cameraManager.stopSession()
+        showCrash = true
+    }
+
+    /// Timer reached zero: persist the Session so SessionDetails can edit it,
+    /// then show the finish screen.
+    private func finishSession() {
+        let session = Session(
+            userId: placeholderUserId,
+            duration: durationSeconds,
+            startTime: sessionStartTime ?? Date(),
+            endTime: Date()
+        )
+        context.insert(session)
+        try? context.save()
+        newSessionId = session.id
+        cameraManager.stopSession()
+        showFinish = true
     }
 }
 

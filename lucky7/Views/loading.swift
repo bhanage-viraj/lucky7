@@ -6,14 +6,47 @@
 import SwiftUI
 
 struct Loading: View {
-    
+
     @State private var pulse = false
     @State private var showHome = false
-    
+
+    init() {
+        // Dark tab bar only — without forcing the whole app into dark mode.
+        let appearance = UITabBarAppearance()
+        appearance.configureWithOpaqueBackground()
+        appearance.backgroundColor = UIColor(white: 0.10, alpha: 1.0)
+
+        let item = UITabBarItemAppearance()
+        item.normal.iconColor = UIColor(white: 1.0, alpha: 0.55)
+        item.normal.titleTextAttributes = [.foregroundColor: UIColor(white: 1.0, alpha: 0.55)]
+        item.selected.iconColor = .white
+        item.selected.titleTextAttributes = [.foregroundColor: UIColor.white]
+
+        appearance.stackedLayoutAppearance = item
+        appearance.inlineLayoutAppearance = item
+        appearance.compactInlineLayoutAppearance = item
+
+        UITabBar.appearance().standardAppearance = appearance
+        UITabBar.appearance().scrollEdgeAppearance = appearance
+    }
+
     var body: some View {
         
         if showHome {
-            HomePage()
+            TabView {
+                Tab("Rush Hour", systemImage: "rays") {
+                    HomePage()
+                }
+
+                Tab("History", systemImage: "clock") {
+                    HistoryView()
+                }
+
+                Tab(role: .search) {
+                    SessionSearchView()
+                }
+            }
+            .tint(.white)
         } else {
             
             ZStack {

@@ -4,6 +4,9 @@
 import SwiftUI
 
 struct FinishSessionScreen: View {
+    /// Called automatically 3s after appearing (e.g. to open SessionDetails).
+    var onContinue: () -> Void = {}
+
     @State private var appeared = false
     
     var body: some View {
@@ -62,6 +65,9 @@ struct FinishSessionScreen: View {
             }
             .onAppear {
                 appeared = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    onContinue()
+                }
             }
         }
     }
