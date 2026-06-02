@@ -2,9 +2,8 @@
 //  ExportEngine.swift
 //  lucky7
 //
-//  Stitches the raw timelapse into one clip:
-//  - Long sessions → compressed to max 30s
-//  - Early / short sessions → keeps real length (not padded to 30s)
+//  Raw timelapse is already timed at 60 fps (frame N → t = N/60).
+//  Export re-encodes to a clean MP4 with duration = frameCount / 60.
 //
 
 import AVFoundation
@@ -16,37 +15,45 @@ final class ExportEngine {
 
     func generateWrappedVideo(
         rawVideoURL: URL,
+        capturedFrameCount: Int,
         sessionWallClockSeconds: TimeInterval? = nil,
-        maxTargetDurationInSeconds: TimeInterval = AppConstants.wrappedVideoDurationSeconds,
+        plannedSessionSeconds: TimeInterval? = nil,
         completion: @escaping (URL?) -> Void
     ) {
+        let frameCount = max(capturedFrameCount, 0)
+        let outputSeconds = AppConstants.wrappedDurationSeconds(frameCount: frameCount)
+
+        guard frameCount > 0, outputSeconds > 0 else {
+            completion(nil)
+            return
+        }
+
         let asset = AVURLAsset(url: rawVideoURL)
 
         Task {
             do {
                 let sourceDuration = try await asset.load(.duration)
                 let rawSeconds = max(CMTimeGetSeconds(sourceDuration), 0.1)
-                let maxTarget = max(maxTargetDurationInSeconds, 0.5)
+                let targetDuration = CMTime(seconds: outputSeconds, preferredTimescale: 600)
 
-                // Short early-ended session: keep actual length. Long session: cap at 30s.
-                let outputSeconds = min(rawSeconds, maxTarget)
-                let scaledDuration = CMTime(seconds: outputSeconds, preferredTimescale: 600)
-
-                if let wallClock = sessionWallClockSeconds {
+                if let wall = sessionWallClockSeconds, let planned = plannedSessionSeconds {
                     print(
                         String(
-                            format: "ExportEngine: %.0fs session → %.1fs raw → %.1fs final",
-                            wallClock,
-                            rawSeconds,
-                            outputSeconds
+                            format: "ExportEngine: %.0fs of %.0fs planned → %d frames → %.2fs @ %.0ffps",
+                            wall,
+                            planned,
+                            frameCount,
+                            outputSeconds,
+                            AppConstants.wrappedOutputFPS
                         )
                     )
                 } else {
                     print(
                         String(
-                            format: "ExportEngine: %.1fs raw → %.1fs final",
-                            rawSeconds,
-                            outputSeconds
+                            format: "ExportEngine: %d frames → %.2fs @ %.0ffps",
+                            frameCount,
+                            outputSeconds,
+                            AppConstants.wrappedOutputFPS
                         )
                     )
                 }
@@ -73,10 +80,10 @@ final class ExportEngine {
 
                 compositionTrack.preferredTransform = try await videoTrack.load(.preferredTransform)
 
-                if rawSeconds > outputSeconds + 0.05 {
+                if abs(rawSeconds - outputSeconds) > 0.05 {
                     compositionTrack.scaleTimeRange(
                         CMTimeRange(start: .zero, duration: sourceDuration),
-                        toDuration: scaledDuration
+                        toDuration: targetDuration
                     )
                 }
 

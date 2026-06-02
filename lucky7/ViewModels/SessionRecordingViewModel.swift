@@ -70,13 +70,13 @@ final class SessionRecordingViewModel: ObservableObject {
         self.plannedSessionSeconds = max(plannedSessionSeconds, 60)
         recordedWallClockSeconds = 0
 
-        timelapseManager.configureSampling(forPlannedSessionSeconds: self.plannedSessionSeconds)
-        timelapseManager.startRecording { [weak self] started in
+        timelapseManager.startRecording(plannedSessionSeconds: self.plannedSessionSeconds) { [weak self] started in
             Task { @MainActor in
                 guard let self else { return }
                 if started {
                     self.isRecording = true
                     self.didCaptureThisSession = true
+                    ScreenWakeLock.setActive(true)
                 } else {
                     self.lastError = "Could not start recording."
                     self.statusMessage = nil
@@ -87,10 +87,12 @@ final class SessionRecordingViewModel: ObservableObject {
 
     func pauseRecording() {
         timelapseManager.capturePaused = true
+        timelapseManager.beginPause()
         statusMessage = "Recording paused"
     }
 
     func resumeRecording() {
+        timelapseManager.endPause()
         timelapseManager.capturePaused = false
         statusMessage = "Recording…"
     }
@@ -116,13 +118,15 @@ final class SessionRecordingViewModel: ObservableObject {
 
         isRecording = false
         isExporting = true
+        // Stay awake while exporting the timelapse after early end or timer finish.
+        ScreenWakeLock.setActive(true)
         statusMessage = "Saving your session video…"
 
-        timelapseManager.stopRecording { [weak self] rawURL in
+        timelapseManager.stopRecording { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
 
-                guard let rawURL else {
+                guard let rawURL = result.url, result.frameCount > 0 else {
                     self.isExporting = false
                     self.didCaptureThisSession = false
                     self.lastError = "No video was captured. Record for a few seconds on a real device, then end the session."
@@ -134,11 +138,13 @@ final class SessionRecordingViewModel: ObservableObject {
                 let wallClock = self.recordedWallClockSeconds > 0
                     ? self.recordedWallClockSeconds
                     : 0
+                let planned = self.plannedSessionSeconds
 
                 self.exportEngine.generateWrappedVideo(
                     rawVideoURL: rawURL,
+                    capturedFrameCount: result.frameCount,
                     sessionWallClockSeconds: wallClock > 0 ? wallClock : nil,
-                    maxTargetDurationInSeconds: AppConstants.wrappedVideoDurationSeconds
+                    plannedSessionSeconds: planned > 0 ? planned : nil
                 ) { [weak self] finalURL in
                     Task { @MainActor in
                         guard let self else { return }
@@ -169,10 +175,12 @@ final class SessionRecordingViewModel: ObservableObject {
     private func finishExportCompletions() {
         let completions = exportCompletions
         exportCompletions.removeAll()
+        ScreenWakeLock.release()
         completions.forEach { $0() }
     }
 
     func resetForNewSession() {
+        ScreenWakeLock.release()
         isRecording = false
         isExporting = false
         finalVideoURL = nil
@@ -188,7 +196,11 @@ final class SessionRecordingViewModel: ObservableObject {
     }
 
     var wrappedDurationSeconds: TimeInterval {
-        AppConstants.wrappedVideoDurationSeconds
+        if let url = finalVideoURL {
+            let asset = AVURLAsset(url: url)
+            return CMTimeGetSeconds(asset.duration)
+        }
+        return AppConstants.wrappedDurationSeconds(frameCount: timelapseManager.lastCapturedFrameCount)
     }
 
     // MARK: - Private

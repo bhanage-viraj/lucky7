@@ -13,6 +13,7 @@ struct RecordingPage: View {
     @State private var groupOffset: CGFloat = 0
     @State private var showFullFocusScreen = false
     @State private var showCrashSession = false
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var sessionTimer: SessionTimerViewModel
     @EnvironmentObject private var sessionRecording: SessionRecordingViewModel
@@ -248,8 +249,23 @@ struct RecordingPage: View {
             sessionRecording.prepareCamera()
         }
         .onDisappear {
+            if !sessionRecording.isExporting, !sessionRecording.isRecording {
+                ScreenWakeLock.release()
+            }
             if !sessionRecording.isExporting {
                 sessionRecording.stopCamera()
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active:
+                if sessionRecording.isRecording || sessionRecording.isExporting {
+                    ScreenWakeLock.setActive(true)
+                }
+            case .background, .inactive:
+                break
+            @unknown default:
+                break
             }
         }
         .onChange(of: sessionTimer.showFinishSession) { _, show in
