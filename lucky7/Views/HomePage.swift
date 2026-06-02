@@ -2,10 +2,10 @@ import SwiftUI
 
 // MARK: - Main View
 struct HomePage: View {
+    @EnvironmentObject private var sessionTimer: SessionTimerViewModel
     @State private var selectedHours = 2
     @State private var selectedMinutes = 30
-    @State private var selected: Int? = 2
-    @State private var selected1: Int? = 30
+    @State private var showRecordingPage = false
     
     var body: some View {
         NavigationStack {
@@ -33,7 +33,7 @@ struct HomePage: View {
                             
                             VStack(spacing: 6) {
                                 
-                                NumberScroller(selected: $selected)
+                                NumberScroller(selected: $selectedHours, range: 0...23)
                                     .frame(height: 55)
                                 
                                 
@@ -45,7 +45,7 @@ struct HomePage: View {
                             
                             VStack(spacing: 6) {
                                 
-                                NumberScroller(selected: $selected1)
+                                NumberScroller(selected: $selectedMinutes, range: 1...59)
                                     .frame(height: 55)
                                 
                                 
@@ -55,7 +55,10 @@ struct HomePage: View {
                         
                         TrafficShell {
                             
-                            NavigationLink(destination: RecordingPage()) {
+                            Button {
+                                sessionTimer.configure(hours: selectedHours, minutes: selectedMinutes)
+                                showRecordingPage = true
+                            } label: {
                                 
                                 VStack(spacing: 4) {
                                     
@@ -88,6 +91,9 @@ struct HomePage: View {
                 Spacer()
                 
                 
+            }
+            .navigationDestination(isPresented: $showRecordingPage) {
+                RecordingPage()
             }
         }
         }
@@ -158,5 +164,7 @@ struct TrafficLightCirclePicker: View {
 
 #Preview {
     HomePage()
+        .environmentObject(SessionTimerViewModel())
+        .environmentObject(SessionRecordingViewModel())
 }
 

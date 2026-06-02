@@ -5,25 +5,23 @@
 
 import SwiftUI
 import AVFoundation
-import Combine
 
 // MARK: - Main View
 
 struct RecordingPage: View {
-    @State private var isRunning = false
     @State private var hasStarted = false
     @State private var groupOffset: CGFloat = 0
-    @State private var buttonText = "Start"
     @State private var showFullFocusScreen = false
-    
-    @StateObject private var cameraManager = RecordingCameraManager()
-    
+    @State private var showCrashSession = false
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var sessionTimer: SessionTimerViewModel
+    @EnvironmentObject private var sessionRecording: SessionRecordingViewModel
+
     var body: some View {
-        
+
         ZStack {
-            
-            
-            CameraPreview(session: cameraManager.session)
+
+            CameraPreview(session: sessionRecording.captureSession)
                 .ignoresSafeArea()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             
@@ -53,7 +51,7 @@ struct RecordingPage: View {
                     // CAMERA SWITCH BUTTON
                     
                     Button(action: {
-                        cameraManager.switchCamera()
+                        sessionRecording.switchCamera()
                     }) {
                         Image(systemName: "camera.rotate")
                             .foregroundColor(.white)
@@ -93,7 +91,7 @@ struct RecordingPage: View {
                                     
                                     VStack(spacing: 2) {
                                         
-                                        Text("2")
+                                        Text("\(sessionTimer.hours)")
                                             .font(.custom("Special Gothic Expanded One", size: 34))
                                         
                                         Text("Hours")
@@ -108,7 +106,7 @@ struct RecordingPage: View {
                                     
                                     VStack(spacing: 2) {
                                         
-                                        Text("30")
+                                        Text(String(format: "%02d", sessionTimer.minutes))
                                             .font(.custom("Special Gothic Expanded One", size: 34))
                                         
                                         Text("Minutes")
@@ -126,19 +124,19 @@ struct RecordingPage: View {
                                         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                                             
                                             if !hasStarted {
-                                                
                                                 hasStarted = true
-                                                isRunning = true
+                                                sessionRecording.startRecording(
+                                                    plannedSessionSeconds: TimeInterval(sessionTimer.configuredTotalSeconds)
+                                                )
+                                                sessionTimer.start()
                                                 groupOffset = 70
-                                                
-                                            } else if isRunning {
-                                                
-                                                isRunning = false
+                                            } else if sessionTimer.isRunning {
+                                                sessionTimer.pause()
+                                                sessionRecording.pauseRecording()
                                                 groupOffset = 0
-                                                
                                             } else {
-                                                
-                                                isRunning = true
+                                                sessionTimer.start()
+                                                sessionRecording.resumeRecording()
                                                 groupOffset = 70
                                             }
                                         }
@@ -150,33 +148,27 @@ struct RecordingPage: View {
                                             Image(systemName:
                                                     !hasStarted
                                                   ? "play.fill"
-                                                  : (isRunning ? "pause.fill" : "play.fill")
+                                                  : (sessionTimer.isRunning ? "pause.fill" : "play.fill")
                                             )
                                             .font(.system(size: 20))
                                             
                                             Text(
                                                 !hasStarted
                                                 ? "START"
-                                                : (isRunning ? "PAUSE" : "RESUME")
+                                                : (sessionTimer.isRunning ? "PAUSE" : "RESUME")
                                             )
                                             .font(.custom("Special Gothic Expanded One", size: 13))
                                         }
                                         .foregroundStyle(
-                                            isRunning ? .yellow : .white
+                                            sessionTimer.isRunning ? .yellow : .white
                                         )
                                     }
                                 }
                                 .scaleEffect(0.70)
                             }
                             .offset(x: 0, y: 80 + groupOffset)
-                            if hasStarted && !isRunning {
-                                
-                                Button(action: {
-                                    
-                                    // surrenderScreen
-                                    
-                                }) {
-                                    
+                            if hasStarted && !sessionTimer.isRunning {
+                                Button(action: endSessionEarly) {
                                     Image("End")
                                 }
                                 .offset(y: 200 + groupOffset)
@@ -186,16 +178,129 @@ struct RecordingPage: View {
                     }
                 }
             }
+
+            if sessionRecording.isExporting {
+                Color.black.opacity(0.55)
+                    .ignoresSafeArea()
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .tint(.white)
+                        .scaleEffect(1.4)
+                    Text("Saving your video...")
+                        .font(.custom("Special Gothic Expanded One", size: 16))
+                        .foregroundColor(.white)
+                }
+            }
+
+            if sessionRecording.permissionDenied {
+                VStack(spacing: 12) {
+                    Text("Camera access is required to record your timelapse.")
+                        .font(.system(size: 14, weight: .semibold))
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 32)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black.opacity(0.7))
+            }
+
+            VStack {
+                if sessionRecording.isRecording {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 10, height: 10)
+                        Text("REC")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.black.opacity(0.5))
+                    .clipShape(Capsule())
+                }
+
+                Spacer()
+
+                if let message = sessionRecording.statusMessage, !sessionRecording.isExporting {
+                    Text(message)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.black.opacity(0.45))
+                        .clipShape(Capsule())
+                        .padding(.bottom, 120)
+                } else if sessionRecording.savedToPhotos {
+                    Text("Saved to Photos ✓")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.green.opacity(0.7))
+                        .clipShape(Capsule())
+                        .padding(.bottom, 120)
+                }
+            }
+            .padding(.top, 60)
         }
         .onAppear {
-            cameraManager.checkPermissions()
+            sessionRecording.prepareCamera()
         }
         .onDisappear {
-            cameraManager.stopSession()
+            if !sessionRecording.isExporting {
+                sessionRecording.stopCamera()
+            }
+        }
+        .onChange(of: sessionTimer.showFinishSession) { _, show in
+            if show {
+                finalizeRecording()
+            }
+        }
+        .onChange(of: sessionTimer.requestReturnToHome) { _, shouldReturn in
+            guard shouldReturn else { return }
+            sessionTimer.requestReturnToHome = false
+            exitToHomeFromSessionFlow()
         }
         .fullScreenCover(isPresented: $showFullFocusScreen) {
             FullFocusScreen()
         }
+        .fullScreenCover(isPresented: $sessionTimer.showFinishSession) {
+            FinishSessionScreen(onFlowComplete: exitToHomeFromSessionFlow)
+        }
+        .fullScreenCover(isPresented: $showCrashSession) {
+            CrashSessionScreen(onFlowComplete: exitToHomeFromSessionFlow)
+        }
+    }
+
+    private func exitToHomeFromSessionFlow() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            showCrashSession = false
+            showFullFocusScreen = false
+            sessionTimer.showFinishSession = false
+        }
+        sessionTimer.pause()
+        sessionRecording.stopCamera()
+        sessionRecording.resetForNewSession()
+        dismiss()
+    }
+
+    private func endSessionEarly() {
+        sessionTimer.pause()
+        finalizeRecording {
+            showCrashSession = true
+        }
+    }
+
+    private func finalizeRecording(completion: @escaping () -> Void = {}) {
+        guard hasStarted else {
+            completion()
+            return
+        }
+        let wallClock = TimeInterval(sessionTimer.elapsedSeconds)
+        sessionRecording.stopRecordingAndExport(wallClockSeconds: wallClock, completion: completion)
     }
 }
 
@@ -259,95 +364,8 @@ class PreviewView: UIView {
 }
 
 
-// MARK: - Camera Manager
-
-class RecordingCameraManager: NSObject, ObservableObject {
-    
-    @Published var cameraPosition: AVCaptureDevice.Position = .front
-    let session = AVCaptureSession()
-    
-    func checkPermissions() {
-        
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-            
-        case .authorized:
-            setupCamera()
-            
-        case .notDetermined:
-            
-            AVCaptureDevice.requestAccess(for: .video) { granted in
-                
-                if granted {
-                    DispatchQueue.main.async {
-                        self.setupCamera()
-                    }
-                }
-            }
-            
-        default:
-            print("Camera permission denied")
-        }
-    }
-    
-    
-    func setupCamera() {
-        configureSession(position: cameraPosition)
-    }
-
-    private func configureSession(position: AVCaptureDevice.Position) {
-
-        session.beginConfiguration()
-
-        // Remove existing inputs
-        for input in session.inputs {
-            session.removeInput(input)
-        }
-
-        session.sessionPreset = .high
-
-        guard let device = AVCaptureDevice.default(
-            .builtInWideAngleCamera,
-            for: .video,
-            position: position
-        ) else {
-            session.commitConfiguration()
-            return
-        }
-
-        do {
-            let input = try AVCaptureDeviceInput(device: device)
-            if session.canAddInput(input) {
-                session.addInput(input)
-            }
-        } catch {
-            print("Camera input error:", error)
-        }
-
-        session.commitConfiguration()
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            if !self.session.isRunning {
-                self.session.startRunning()
-            }
-        }
-    }
-
-    func switchCamera() {
-        cameraPosition = (cameraPosition == .back) ? .front : .back
-        DispatchQueue.main.async {
-            self.configureSession(position: self.cameraPosition)
-        }
-    }
-
-    func stopSession() {
-        DispatchQueue.global(qos: .userInitiated).async {
-            if self.session.isRunning {
-                self.session.stopRunning()
-            }
-        }
-    }
-}
-
 #Preview {
     RecordingPage()
+        .environmentObject(SessionTimerViewModel())
+        .environmentObject(SessionRecordingViewModel())
 }

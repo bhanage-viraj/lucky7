@@ -5,6 +5,7 @@
 
 import SwiftUI
 import SwiftData
+import AVKit
 
 struct WrappedVideoScreen: View {
     var sessionId: UUID
@@ -12,10 +13,11 @@ struct WrappedVideoScreen: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var sessionRecording: SessionRecordingViewModel
 
     @Query private var sessions: [Session]
-
-    @State private var isPlaying: Bool = true
+    @State private var player: AVPlayer?
+    @State private var isPlaying = true
 
     init(sessionId: UUID, videoFrames: [UIImage] = []) {
         self.sessionId = sessionId
@@ -32,7 +34,6 @@ struct WrappedVideoScreen: View {
         return t.isEmpty ? "Untitled session" : t
     }
 
-    // TODO: move into Utilities/TimeFormatter.swift once that file is filled
     private func formatDuration(_ seconds: TimeInterval) -> String {
         let total = max(Int(seconds), 0)
         let h = total / 3600
@@ -52,11 +53,14 @@ struct WrappedVideoScreen: View {
             .uppercased()
     }
 
-    // MARK: - Share content
-    private var shareableVideoURL: URL? {
-        // TODO: resolve session?.videoWrapId → Timelapse → final video URL.
-        return nil
+    private var videoURL: URL? {
+        if let path = session?.wrappedVideoPath {
+            return URL(fileURLWithPath: path)
+        }
+        return sessionRecording.finalVideoURL
     }
+
+    private var shareableVideoURL: URL? { videoURL }
 
     private var shareableText: String {
         "\(displayTitle) — \(durationText) on \(dateText)"
@@ -90,6 +94,16 @@ struct WrappedVideoScreen: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .onAppear {
+            if let videoURL {
+                player = AVPlayer(url: videoURL)
+                player?.play()
+            }
+        }
+        .onDisappear {
+            player?.pause()
+            player = nil
+        }
     }
 
     // MARK: - Subviews
@@ -132,9 +146,10 @@ struct WrappedVideoScreen: View {
 
     private var mediaCard: some View {
         ZStack(alignment: .top) {
-            // TODO: replace with AVPlayer/VideoPlayer
             Group {
-                if let firstFrame = videoFrames.first {
+                if let player {
+                    VideoPlayer(player: player)
+                } else if let firstFrame = videoFrames.first {
                     Image(uiImage: firstFrame)
                         .resizable()
                         .scaledToFill()
@@ -149,6 +164,7 @@ struct WrappedVideoScreen: View {
                         )
                 }
             }
+            .frame(height: 420)
             .clipShape(RoundedRectangle(cornerRadius: 32))
             .background(
                 RoundedRectangle(cornerRadius: 32)
@@ -189,8 +205,7 @@ struct WrappedVideoScreen: View {
     }
 
     private var playPauseButton: some View {
-        // TODO: bind to actual AVPlayer.timeControlStatus
-        Button(action: { isPlaying.toggle() }) {
+        Button(action: togglePlayback) {
             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                 .font(.system(size: 24, weight: .black))
                 .foregroundColor(.black)
@@ -199,9 +214,20 @@ struct WrappedVideoScreen: View {
                 .overlay(Circle().stroke(Color.black, lineWidth: 3))
         }
     }
+
+    private func togglePlayback() {
+        guard let player else { return }
+        if isPlaying {
+            player.pause()
+        } else {
+            player.play()
+        }
+        isPlaying.toggle()
+    }
 }
 
 #Preview {
     WrappedVideoScreen(sessionId: UUID(), videoFrames: [])
+        .environmentObject(SessionRecordingViewModel())
         .modelContainer(for: Session.self, inMemory: true)
 }
