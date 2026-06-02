@@ -22,10 +22,14 @@ struct WeeklyAnalyticScreen: View {
         let firstFrame = videoFrames.first!
         let middleFrame = videoFrames[videoFrames.count / 2]
         let lastFrame = videoFrames.last!
-        
+
         return [firstFrame, middleFrame, lastFrame]
     }
-    
+
+    // Placeholder week summary until real weekly aggregation is wired up.
+    private let weekRangeLabel = "24 - 30 May 2026"
+    private let weekTotalDuration: TimeInterval = 12 * 3600 + 30 * 60
+
     var sessionStats = [
         ["title1": "FOCUS DURATION",
          "value1": "6h 48m",
@@ -42,7 +46,6 @@ struct WeeklyAnalyticScreen: View {
     ]
     
     var body: some View {
-        NavigationStack{
             ZStack{
                 Color("CanvasBlue")
                     .ignoresSafeArea()
@@ -57,7 +60,7 @@ struct WeeklyAnalyticScreen: View {
                             .frame(height: 24)
                         
                         HStack{
-                            Text("24 - 30 May 2026")
+                            Text(weekRangeLabel)
                             Image(systemName: "chevron.down")
                         }
                         .foregroundStyle(.white)
@@ -143,8 +146,14 @@ struct WeeklyAnalyticScreen: View {
                             }
                             .padding()
                             
-                            NavigationLink(destination: WrappedVideoScreen(sessionId: UUID(), videoFrames: [])
-                                .modelContainer(for: Session.self, inMemory: true)){
+                            NavigationLink(destination: WrappedVideoScreen(
+                                kind: .weekly(
+                                    title: "Weekly Rewind",
+                                    periodLabel: weekRangeLabel,
+                                    duration: weekTotalDuration
+                                ),
+                                videoFrames: videoFrames
+                            )) {
                                 ZStack{
                                     SnapshotsView(images: displayFrame)
                                         .foregroundColor(.white)
@@ -254,13 +263,15 @@ struct WeeklyAnalyticScreen: View {
                 }
                 .padding(.horizontal, 24)
             }
-        }
     }
 }
 
 #Preview {
     let dummyFrames = ["dummySnapshot1", "dummySnapshot2", "dummySnapshot3"]
         .compactMap { UIImage(named: $0) }
-    
-    WeeklyAnalyticScreen(videoFrames: dummyFrames)
+
+    NavigationStack {
+        WeeklyAnalyticScreen(videoFrames: dummyFrames)
+    }
+    .modelContainer(for: Session.self, inMemory: true)
 }

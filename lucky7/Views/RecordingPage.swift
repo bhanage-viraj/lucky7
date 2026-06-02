@@ -200,6 +200,14 @@ struct RecordingPage: View {
         .fullScreenCover(isPresented: $showDetails, onDismiss: { dismiss() }) {
             SessionDetails(sessionId: newSessionId ?? UUID(), videoFrames: [])
         }
+        // Closing the analytics screen should jump straight home, skipping the
+        // SessionDetails/finish covers stacked underneath it.
+        .onReceive(NotificationCenter.default.publisher(for: .returnToHome)) { _ in
+            showCrash = false
+            showFinish = false
+            showDetails = false
+            dismiss()
+        }
     }
 
     // MARK: - Session lifecycle
@@ -375,6 +383,13 @@ class CameraManager: NSObject, ObservableObject {
             }
         }
     }
+}
+
+// MARK: - Notifications
+
+extension Notification.Name {
+    /// Posted when a screen wants to dismiss the whole recording flow and return to HomePage.
+    static let returnToHome = Notification.Name("returnToHome")
 }
 
 #Preview {

@@ -38,12 +38,8 @@ struct Loading: View {
                     HomePage()
                 }
 
-                Tab("History", systemImage: "clock") {
-                    HistoryView()
-                }
-
-                Tab(role: .search) {
-                    SessionSearchView()
+                Tab("Monitor", systemImage: "play.square.stack.fill") {
+                    MonitorScreen()
                 }
             }
             .tint(.white)

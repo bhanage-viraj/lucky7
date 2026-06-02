@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import PhotosUI
+import UIKit
 
 struct SessionDetails: View {
     var sessionId: UUID
@@ -22,6 +23,11 @@ struct SessionDetails: View {
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var uploadedSnapshots: [UIImage] = []
     @State private var isShowingAnalytics = false
+    @State private var showImageSourceDialog = false
+    @State private var showCamera = false
+    @State private var showLibrary = false
+
+    private let maxSnapshots = 6
     
     // filtering only 3 frames for snapshots
     private var displayFrame: [UIImage] {
@@ -42,6 +48,23 @@ struct SessionDetails: View {
         !sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
         !sessionDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
         !uploadedSnapshots.isEmpty
+    }
+
+    private func addSnapshot(_ image: UIImage) {
+        guard uploadedSnapshots.count < maxSnapshots else { return }
+        uploadedSnapshots.append(downscaled(image))
+    }
+
+    /// Shrinks large photos so storing/decoding several of them doesn't spike memory.
+    private func downscaled(_ image: UIImage, maxDimension: CGFloat = 1080) -> UIImage {
+        let longestSide = max(image.size.width, image.size.height)
+        guard longestSide > maxDimension else { return image }
+        let scale = maxDimension / longestSide
+        let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
     }
     
     var body: some View {
@@ -109,47 +132,99 @@ struct SessionDetails: View {
                         }
                         
                         CardInput(title: "ACTIVITIES SNAPSHOTS", backgroundColor: Color.blue.opacity(0.3)) {
-                            PhotosPicker(selection: $pickerItems, maxSelectionCount: 6, matching: .images) {
-                                if uploadedSnapshots.isEmpty {
+                            if uploadedSnapshots.isEmpty {
+                                Button {
+                                    showImageSourceDialog = true
+                                } label: {
                                     VStack(spacing: 12) {
                                         Image(systemName: "camera.viewfinder")
                                             .font(.system(size: 35))
                                             .foregroundColor(.white)
 
-                                        Text("Upload photo/ video of what you did")
+                                        Text("Take a photo or upload from your library")
                                             .font(.system(size: 14))
                                             .foregroundColor(.white)
+                                            .multilineTextAlignment(.center)
                                     }
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 40)
-                                } else {
-                                    ScrollView(.horizontal, showsIndicators: false) {
-                                        HStack(spacing: 8) {
-                                            ForEach(Array(uploadedSnapshots.enumerated()), id: \.offset) { _, img in
-                                                Image(uiImage: img)
-                                                    .resizable()
-                                                    .scaledToFill()
+                                }
+                            } else {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        ForEach(Array(uploadedSnapshots.enumerated()), id: \.offset) { index, img in
+                                            Image(uiImage: img)
+                                                .resizable()
+                                                .scaledToFill()
+                                                .frame(width: 80, height: 80)
+                                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                                .overlay(alignment: .topTrailing) {
+                                                    Button {
+                                                        uploadedSnapshots.remove(at: index)
+                                                    } label: {
+                                                        Image(systemName: "xmark.circle.fill")
+                                                            .font(.system(size: 18))
+                                                            .symbolRenderingMode(.palette)
+                                                            .foregroundStyle(.white, .black)
+                                                    }
+                                                    .padding(4)
+                                                }
+                                        }
+
+                                        if uploadedSnapshots.count < maxSnapshots {
+                                            Button {
+                                                showImageSourceDialog = true
+                                            } label: {
+                                                Image(systemName: "plus")
+                                                    .font(.system(size: 26, weight: .bold))
+                                                    .foregroundColor(.white)
                                                     .frame(width: 80, height: 80)
-                                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                                    .background(
+                                                        RoundedRectangle(cornerRadius: 8)
+                                                            .fill(Color.white.opacity(0.25))
+                                                    )
                                             }
                                         }
-                                        .padding(.horizontal, 20)
                                     }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 24)
+                                    .padding(.horizontal, 20)
                                 }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 24)
                             }
                         }
+                        .confirmationDialog("Add a snapshot", isPresented: $showImageSourceDialog, titleVisibility: .visible) {
+                            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                                Button("Take Photo") { showCamera = true }
+                            }
+                            Button("Choose from Library") { showLibrary = true }
+                            Button("Cancel", role: .cancel) {}
+                        }
+                        .photosPicker(
+                            isPresented: $showLibrary,
+                            selection: $pickerItems,
+                            maxSelectionCount: max(1, maxSnapshots - uploadedSnapshots.count),
+                            matching: .images
+                        )
+                        .sheet(isPresented: $showCamera) {
+                            CameraPicker { image in
+                                addSnapshot(image)
+                            }
+                            .ignoresSafeArea()
+                        }
                         .onChange(of: pickerItems) { _, items in
+                            guard !items.isEmpty else { return }
                             Task {
-                                var images: [UIImage] = []
+                                var newImages: [UIImage] = []
                                 for item in items {
                                     if let data = try? await item.loadTransferable(type: Data.self),
                                        let img = UIImage(data: data) {
-                                        images.append(img)
+                                        newImages.append(img)
                                     }
                                 }
-                                uploadedSnapshots = images
+                                await MainActor.run {
+                                    for img in newImages { addSnapshot(img) }
+                                    pickerItems = []
+                                }
                             }
                         }
                     }
@@ -186,6 +261,46 @@ struct SessionDetails: View {
         }
         .fullScreenCover(isPresented: $isShowingAnalytics, onDismiss: { dismiss() }) {
             SessionAnalytics(sessionId: sessionId, videoFrames: videoFrames)
+        }
+    }
+}
+
+// MARK: - Camera Capture
+
+/// Wraps `UIImagePickerController` so a snapshot can be taken straight from the camera.
+struct CameraPicker: UIViewControllerRepresentable {
+    var onCapture: (UIImage) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: CameraPicker
+
+        init(_ parent: CameraPicker) {
+            self.parent = parent
+        }
+
+        func imagePickerController(_ picker: UIImagePickerController,
+                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let image = info[.originalImage] as? UIImage {
+                parent.onCapture(image)
+            }
+            parent.dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
         }
     }
 }
@@ -252,7 +367,6 @@ struct CardInput<Content: View>: View {
             backgroundColor
                 .cornerRadius(20)
                 .shadow(color: .black, radius: 0, x: 0, y: 4)
-                .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.black, lineWidth: 1))
                 .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.black, lineWidth: 1))
                 .padding(.top, 12)
             

@@ -30,7 +30,9 @@ struct SessionAnalytics: View {
     private var session: Session? { sessions.first }
 
     private var savedSnapshots: [UIImage] {
-        (session?.snapshotImages ?? []).compactMap { UIImage(data: $0) }
+        // Only the first 3 are ever shown, so decode just those — decoding all
+        // stored images on every render spikes memory and crashes past ~4 photos.
+        (session?.snapshotImages ?? []).prefix(3).compactMap { UIImage(data: $0) }
     }
 
     private var displayTitle: String {
@@ -101,7 +103,7 @@ struct SessionAnalytics: View {
 
             VStack {
                 HStack {
-                    Button(action: { dismiss() }) {
+                    Button(action: { NotificationCenter.default.post(name: .returnToHome, object: nil) }) {
                         Image(systemName: "xmark")
                             .font(.system(size: 20, weight: .bold))
                             .foregroundColor(.white)
@@ -142,7 +144,7 @@ struct SessionAnalytics: View {
             distractionStat.fetchDistractions(for: sessionId, context: context)
         }
         .fullScreenCover(isPresented: $isShowingWrappedVideo) {
-            WrappedVideoScreen(sessionId: sessionId, videoFrames: videoFrames)
+            WrappedVideoScreen(kind: .session(sessionId), videoFrames: videoFrames)
         }
     }
 

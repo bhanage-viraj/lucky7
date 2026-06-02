@@ -55,7 +55,7 @@ struct HomePage: View {
                        
                     
                 }
-                .offset(y: -30)
+                .offset(y: -20)
                 .frame(width: 200, height: 200)
                 
                
@@ -64,10 +64,11 @@ struct HomePage: View {
                     
                 
                 Spacer()
-                
-                
+
+
             }
         }
+        .ignoresSafeArea(.container, edges: .bottom)
         }
     }
 }
@@ -110,6 +111,7 @@ struct HeaderView: View {
                 .offset(y: 60)
             }
         }
+        .padding(.top, 30)
     }
 }
 
