@@ -359,23 +359,9 @@ class PreviewView: UIView {
         // Ensure preview layer fills the view
         previewLayer.frame = bounds
 
-        // Update video orientation to match interface orientation
-        if let connection = previewLayer.connection, connection.isVideoOrientationSupported {
-            connection.videoOrientation = currentVideoOrientation()
+        if let connection = previewLayer.connection {
+            VideoOrientationHelper.applyToCaptureConnection(connection)
         }
-    }
-
-    private func currentVideoOrientation() -> AVCaptureVideoOrientation {
-        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-            switch scene.interfaceOrientation {
-            case .portrait: return .portrait
-            case .portraitUpsideDown: return .portraitUpsideDown
-            case .landscapeLeft: return .landscapeLeft
-            case .landscapeRight: return .landscapeRight
-            default: return .portrait
-            }
-        }
-        return .portrait
     }
 }
 

@@ -232,11 +232,12 @@ final class TimelapseManager: NSObject {
             self.session.addOutput(output)
             self.videoOutput = output
 
+            // Keep sample buffers in sensor orientation; AVAssetWriterInput.transform
+            // sets the correct portrait/landscape metadata on the saved file.
             if let connection = output.connection(with: .video) {
-                if connection.isVideoRotationAngleSupported(90) {
-                    connection.videoRotationAngle = 90
-                } else if connection.isVideoOrientationSupported {
-                    connection.videoOrientation = .portrait
+                let angle: CGFloat = 0
+                if connection.isVideoRotationAngleSupported(angle) {
+                    connection.videoRotationAngle = angle
                 }
             }
 
@@ -311,6 +312,11 @@ final class TimelapseManager: NSObject {
 
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
         input.expectsMediaDataInRealTime = true
+        input.transform = VideoOrientationHelper.writerTransform(
+            bufferWidth: width,
+            bufferHeight: height,
+            cameraPosition: currentPosition()
+        )
 
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: input,

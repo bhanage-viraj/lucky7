@@ -143,6 +143,7 @@ final class SessionRecordingViewModel: ObservableObject {
                 self.exportEngine.generateWrappedVideo(
                     rawVideoURL: rawURL,
                     capturedFrameCount: result.frameCount,
+                    overlay: self.makeOverlay(frameCount: result.frameCount),
                     sessionWallClockSeconds: wallClock > 0 ? wallClock : nil,
                     plannedSessionSeconds: planned > 0 ? planned : nil
                 ) { [weak self] finalURL in
@@ -238,5 +239,40 @@ final class SessionRecordingViewModel: ObservableObject {
         }
 
         return images
+    }
+
+    private func makeOverlay(frameCount: Int) -> ExportEngine.WrappedVideoOverlay {
+        // Duration based on frames @ 60fps.
+        let seconds = AppConstants.wrappedDurationSeconds(frameCount: frameCount)
+        let total = max(Int(seconds.rounded()), 1)
+        let mins = total / 60
+        let secs = total % 60
+        let durationCompact = mins > 0 ? "\(mins)m" : "\(secs)s"
+
+        // Time range and date based on wall-clock end time.
+        let end = Date()
+        let wall = recordedWallClockSeconds > 0 ? recordedWallClockSeconds : seconds
+        let start = end.addingTimeInterval(-wall)
+
+        let timeFormatter = DateFormatter()
+        timeFormatter.locale = .current
+        timeFormatter.dateFormat = "HH:mm"
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.locale = .current
+        dateFormatter.dateFormat = "d MMM yyyy"
+
+        let range = "\(timeFormatter.string(from: start))–\(timeFormatter.string(from: end))"
+        let date = dateFormatter.string(from: end)
+
+        // Title: if user hasn't saved a title yet, fallback.
+        let title = "Untitled session"
+
+        return ExportEngine.WrappedVideoOverlay(
+            titleTop: title,
+            durationCenter: durationCompact,
+            dateCenter: date,
+            footer: "RUSH HOUR • \(range)"
+        )
     }
 }
