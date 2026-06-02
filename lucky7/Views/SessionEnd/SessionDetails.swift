@@ -203,9 +203,9 @@ struct SnapshotsView: View {
                     .scaledToFill()
                     .frame(width: 61, height: 81)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.black, lineWidth: 1))
-                    .rotationEffect(.degrees(-11))
                     .shadow(color: .black, radius: 0, x: 0, y: 4)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white, lineWidth: 1))
+                    .rotationEffect(.degrees(-11))
                     .offset(x: -34, y: 5)
             }
             
@@ -215,9 +215,9 @@ struct SnapshotsView: View {
                     .scaledToFill()
                     .frame(width: 61, height: 81)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.black, lineWidth: 1))
-                    .rotationEffect(.degrees(11))
                     .shadow(color: .black, radius: 0, x: 0, y: 4)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white, lineWidth: 1))
+                    .rotationEffect(.degrees(11))
                     .offset(x: 34, y: 5)
             }
             
@@ -227,8 +227,8 @@ struct SnapshotsView: View {
                     .scaledToFill()
                     .frame(width: 68, height: 91)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.black, lineWidth: 1))
-                    .shadow(color: .black, radius: 0, x: 0, y: 4)
+                    .shadow(color: .black, radius: 0, x: 0, y: 5)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white, lineWidth: 1))
                     .zIndex(1)
             }
         }
@@ -250,8 +250,10 @@ struct CardInput<Content: View>: View {
     var body: some View {
         ZStack(alignment: .top) {
             backgroundColor
-                .cornerRadius(12)
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.black, lineWidth: 1))
+                .cornerRadius(20)
+                .shadow(color: .black, radius: 0, x: 0, y: 4)
+                .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.black, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.black, lineWidth: 1))
                 .padding(.top, 12)
             
             content
