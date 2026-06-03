@@ -28,13 +28,13 @@ struct BreakUnlockOverlay: View {
 
                 card
                     .frame(
-                        width: collapsed ? 150 : geo.size.width - 32,
-                        height: collapsed ? 40 : 104
+                        width: collapsed ? 140 : geo.size.width - 40,
+                        height: collapsed ? 38 : 84
                     )
                     .opacity(collapsed ? 0 : 1)   // fades as it reaches the island
                     .position(
                         x: geo.size.width / 2,
-                        y: collapsed ? 26 : geo.size.height * 0.30
+                        y: collapsed ? 24 : 105   // just below the Dynamic Island, like a real banner
                     )
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -55,18 +55,18 @@ struct BreakUnlockOverlay: View {
                 .resizable()
                 .scaledToFill()
 
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Image(systemName: "lock.open.fill")
-                    .font(.system(size: 22, weight: .bold))
+                    .font(.system(size: 19, weight: .bold))
                     .foregroundStyle(.white)
                 Text("\(appName) unlocked")
-                    .font(.system(size: 22, weight: .bold))
+                    .font(.system(size: 19, weight: .bold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 22)
+            .padding(.horizontal, 18)
             .opacity(collapsed ? 0 : 1)   // text drops out first
         }
         .clipShape(RoundedRectangle(cornerRadius: collapsed ? 20 : 26, style: .continuous))

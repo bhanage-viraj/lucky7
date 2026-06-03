@@ -14,7 +14,7 @@ struct Loading: View {
     var body: some View {
         if showNext {
             if didShowOnboarding {
-                MainTabView()
+                HomePage()
             } else {
                 AppBlockOnboardingScreen(onDone: {
                     didShowOnboarding = true

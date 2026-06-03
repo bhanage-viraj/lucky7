@@ -149,21 +149,6 @@ struct ActiveFocusScreen: View {
 
     private var actionButtons: some View {
         VStack(spacing: 12) {
-            #if DEBUG
-            Button("Simulate jailbreak (dev)") {
-                let d = Distraction(
-                    sessionId: sessionId,
-                    appOpened: "YouTube",
-                    sourceKind: "userManual"
-                )
-                modelContext.insert(d)
-                try? modelContext.save()
-                pendingPrompt = PendingPrompt(distraction: d, tokenDataToClear: nil)
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            #endif
-
             Button(action: endSession) {
                 Text("End session")
                     .font(.custom("SpecialGothicExpandedOne-Regular", size: 16))

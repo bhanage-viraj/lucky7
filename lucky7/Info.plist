@@ -17,8 +17,10 @@
         <string>snssdk1233</string>
     </array>
     <key>NSCameraUsageDescription</key>
-    <string>This app needs camera access.</string>
+    <string>We need camera access to record your productivity timelapse.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>This app needs microphone access for recording audio.</string>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>We save your session wrap to Photos so you can keep and share it.</string>
 </dict>
 </plist>
