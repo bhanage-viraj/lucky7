@@ -32,9 +32,7 @@ struct SessionAnalytics: View {
     private var session: Session? { sessions.first }
 
     private var savedSnapshots: [UIImage] {
-        // Only the first 3 are ever shown, so decode just those — decoding all
-        // stored images on every render spikes memory and crashes past ~4 photos.
-        (session?.snapshotImages ?? []).prefix(3).compactMap { UIImage(data: $0) }
+        (session?.snapshotImages ?? []).compactMap { UIImage(data: $0) }
     }
 
     private var displayTitle: String {
@@ -146,7 +144,7 @@ struct SessionAnalytics: View {
             distractionStat.fetchDistractions(for: sessionId, context: context)
         }
         .fullScreenCover(isPresented: $isShowingWrappedVideo) {
-            WrappedVideoScreen(kind: .session(sessionId), videoFrames: videoFrames)
+            WrappedVideoScreen(sessionId: sessionId, videoFrames: videoFrames)
         }
     }
 
