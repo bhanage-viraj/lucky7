@@ -324,6 +324,10 @@ final class FocusViewModel: ObservableObject {
     }
 
     private func tick() {
+        // Only do work (and publish `now`) while a break is actually active. Otherwise
+        // this fired every second for the whole session and re-rendered the camera-heavy
+        // recording screen for nothing — pure wasted work during recording.
+        guard !activeBreaks.isEmpty else { return }
         now = .now
         let expired = activeBreaks.filter { d in
             guard let until = d.breakGrantedUntil else { return true }

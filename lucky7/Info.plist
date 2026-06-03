@@ -2,25 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>UIAppFonts</key>
-    <array>
-        <string>SpecialGothicExpandedOne-Regular.ttf</string>
-    </array>
-    <key>NSSupportsLiveActivities</key>
-    <true/>
-    <key>LSApplicationQueriesSchemes</key>
-    <array>
-        <string>instagram</string>
-        <string>youtube</string>
-        <string>tiktok</string>
-        <string>twitter</string>
-        <string>snssdk1233</string>
-    </array>
-    <key>NSCameraUsageDescription</key>
-    <string>We need camera access to record your productivity timelapse.</string>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>This app needs microphone access for recording audio.</string>
-    <key>NSPhotoLibraryAddUsageDescription</key>
-    <string>We save your session wrap to Photos so you can keep and share it.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>instagram</string>
+		<string>youtube</string>
+		<string>tiktok</string>
+		<string>twitter</string>
+		<string>snssdk1233</string>
+	</array>
+	<key>UIAppFonts</key>
+	<array>
+		<string>SpecialGothicExpandedOne-Regular.ttf</string>
+	</array>
 </dict>
 </plist>

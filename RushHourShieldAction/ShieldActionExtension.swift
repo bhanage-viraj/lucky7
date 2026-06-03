@@ -5,6 +5,7 @@
 //  Created by Andrian on 01/06/26.
 //
 
+import Foundation
 import ManagedSettings
 import UserNotifications
 import os
@@ -42,13 +43,12 @@ class ShieldActionExtension: ShieldActionDelegate {
 
     override func handle(action: ShieldAction, for application: ApplicationToken, completionHandler: @escaping (ShieldActionResponse) -> Void) {
         switch action {
-        // `.openParentalControlsApp` (iOS 26.5) auto-opens our app when it fires —
-        // it's flaky (works sometimes), so we ALSO queue a notification as the
-        // fallback the user can tap when the direct open doesn't kick in.
+        // .openParentalControlsApp (iOS 26.5) is the auto-open, but it's unreliable
+        // (undocumented/buggy per Apple's own forums), so we ALSO queue a notification
+        // as the dependable fallback the user taps. Schedule it FIRST (the async add can
+        // be killed when this short-lived extension exits), THEN return the response.
         case .primaryButtonPressed:
             recordAction(token: application, action: "back")
-            // register the notification FIRST (its async add can get killed when
-            // this short-lived extension exits), THEN return the response.
             scheduleReturnNotification { self.respond(completionHandler) }
         case .secondaryButtonPressed:
             recordAction(token: application, action: "break")
@@ -58,8 +58,7 @@ class ShieldActionExtension: ShieldActionDelegate {
         }
     }
 
-    // try the direct open (it worked for the user before; flaky); the
-    // notification we already queued is the backup the user taps if it doesn't.
+    // the flaky auto-open; the notification we already queued is the dependable backup.
     private func respond(_ completionHandler: @escaping (ShieldActionResponse) -> Void) {
         if #available(iOS 26.5, *) {
             completionHandler(.openParentalControlsApp)
