@@ -6,28 +6,29 @@
 import SwiftUI
 
 struct Loading: View {
-    
+    @AppStorage("didShowAppBlockOnboarding") private var didShowOnboarding = false
+
     @State private var pulse = false
-    @State private var showHome = false
-    
+    @State private var showNext = false
+
     var body: some View {
-        
-        if showHome {
-            HomePage()
+        if showNext {
+            if didShowOnboarding {
+                MainTabView()
+            } else {
+                AppBlockOnboardingScreen(onDone: {
+                    didShowOnboarding = true
+                })
+            }
         } else {
-            
             ZStack {
-                
                 Color.blue
                     .ignoresSafeArea()
-                
+
                 Image("load6")
-                
                 Image("load7")
-                
                 Image("load8")
-                
-                // Pulse Animation
+
                 Image("Rushhourload")
                     .scaleEffect(pulse ? 1.08 : 0.92)
                     .opacity(pulse ? 1 : 0.75)
@@ -38,14 +39,10 @@ struct Loading: View {
                     )
             }
             .onAppear {
-                
-                // Start pulse animation
                 pulse = true
-                
-                // Navigate after 3 sec
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                     withAnimation(.easeInOut) {
-                        showHome = true
+                        showNext = true
                     }
                 }
             }

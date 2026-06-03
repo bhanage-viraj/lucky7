@@ -1,3 +1,10 @@
+//
+//  DistractionPromptScreen.swift
+//  lucky7
+//
+//  Created by Andrian on 29/05/26.
+//
+
 import SwiftUI
 
 struct DistractionPromptScreen: View {
@@ -6,9 +13,24 @@ struct DistractionPromptScreen: View {
     let onBackToSession: () -> Void
     let onBreakWithReason: (String) -> Void
 
-    @State private var step: Step = .ticket
+    @State private var step: Step
 
     enum Step { case ticket, reason }
+
+    // when the break already happened on the shield, jump straight to the reason
+    init(
+        appName: String,
+        countToday: Int,
+        startAtReason: Bool = false,
+        onBackToSession: @escaping () -> Void,
+        onBreakWithReason: @escaping (String) -> Void
+    ) {
+        self.appName = appName
+        self.countToday = countToday
+        self.onBackToSession = onBackToSession
+        self.onBreakWithReason = onBreakWithReason
+        _step = State(initialValue: startAtReason ? .reason : .ticket)
+    }
 
     var body: some View {
         ZStack {

@@ -1,3 +1,10 @@
+//
+//  ScreenTimeMonitorService.swift
+//  lucky7ta
+//
+//  Created by Andrian on 29/05/26.
+//
+
 import Foundation
 #if os(iOS)
 import FamilyControls
@@ -19,7 +26,15 @@ enum ScreenTimeMonitorService {
     }
 
     static var isAuthorized: Bool {
-        AuthorizationCenter.shared.authorizationStatus == .approved
+        let status = AuthorizationCenter.shared.authorizationStatus
+        return status == .approved || status == .approvedWithDataAccess
+    }
+
+    // true when the user granted the stronger data-access level (lets us read
+    // installedApplications → recover bundle ids). Needs the app-and-website-usage
+    // entitlement + an eligible region (EU / DMA).
+    static var hasDataAccess: Bool {
+        AuthorizationCenter.shared.authorizationStatus == .approvedWithDataAccess
     }
 
     static func requestAuthorization() async throws {
@@ -28,7 +43,7 @@ enum ScreenTimeMonitorService {
         } catch {
             throw AuthorizationError.underlying(error)
         }
-        guard AuthorizationCenter.shared.authorizationStatus == .approved else {
+        guard isAuthorized else {
             throw AuthorizationError.denied
         }
     }

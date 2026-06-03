@@ -12,6 +12,11 @@
 		E602C00D2FC91D3C0099CB1B /* RushHourShieldConfig.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E602C0002FC91D3C0099CB1B /* RushHourShieldConfig.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		E602C0182FC91EF30099CB1B /* ManagedSettings.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E602C0022FC91D3C0099CB1B /* ManagedSettings.framework */; };
 		E602C0202FC91EF40099CB1B /* RushHourShieldAction.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E602C0172FC91EF30099CB1B /* RushHourShieldAction.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		E6F9559F2FCDDC6E00BD31AD /* DeviceActivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E6F9559E2FCDDC6E00BD31AD /* DeviceActivity.framework */; };
+		E6F955A72FCDDC6E00BD31AD /* RushHourJailBreakMonitor.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E6F9559D2FCDDC6E00BD31AD /* RushHourJailBreakMonitor.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		E6F955B22FCDE6DE00BD31AD /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E6F955B12FCDE6DE00BD31AD /* WidgetKit.framework */; };
+		E6F955B42FCDE6DE00BD31AD /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E6F955B32FCDE6DE00BD31AD /* SwiftUI.framework */; };
+		E6F955C52FCDE6DF00BD31AD /* RushHourWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E6F955B02FCDE6DE00BD31AD /* RushHourWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -29,6 +34,20 @@
 			remoteGlobalIDString = E602C0162FC91EF30099CB1B;
 			remoteInfo = RushHourShieldAction;
 		};
+		E6F955A52FCDDC6E00BD31AD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6CC7D1072FBD369000C612DA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E6F9559C2FCDDC6E00BD31AD;
+			remoteInfo = RushHourJailBreakMonitor;
+		};
+		E6F955C32FCDE6DF00BD31AD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6CC7D1072FBD369000C612DA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E6F955AF2FCDE6DE00BD31AD;
+			remoteInfo = RushHourWidgetExtension;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -38,7 +57,9 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
+				E6F955A72FCDDC6E00BD31AD /* RushHourJailBreakMonitor.appex in Embed Foundation Extensions */,
 				E602C00D2FC91D3C0099CB1B /* RushHourShieldConfig.appex in Embed Foundation Extensions */,
+				E6F955C52FCDE6DF00BD31AD /* RushHourWidgetExtension.appex in Embed Foundation Extensions */,
 				E602C0202FC91EF40099CB1B /* RushHourShieldAction.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
@@ -52,9 +73,21 @@
 		E602C0022FC91D3C0099CB1B /* ManagedSettings.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ManagedSettings.framework; path = System/Library/Frameworks/ManagedSettings.framework; sourceTree = SDKROOT; };
 		E602C0042FC91D3C0099CB1B /* ManagedSettingsUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ManagedSettingsUI.framework; path = System/Library/Frameworks/ManagedSettingsUI.framework; sourceTree = SDKROOT; };
 		E602C0172FC91EF30099CB1B /* RushHourShieldAction.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RushHourShieldAction.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E6F9559D2FCDDC6E00BD31AD /* RushHourJailBreakMonitor.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RushHourJailBreakMonitor.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E6F9559E2FCDDC6E00BD31AD /* DeviceActivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DeviceActivity.framework; path = System/Library/Frameworks/DeviceActivity.framework; sourceTree = SDKROOT; };
+		E6F955B02FCDE6DE00BD31AD /* RushHourWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RushHourWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E6F955B12FCDE6DE00BD31AD /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		E6F955B32FCDE6DE00BD31AD /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		0ACAFE000001000000C612DA /* Exceptions for "lucky7" folder in "RushHourWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				BreakActivityAttributes.swift,
+			);
+			target = E6F955AF2FCDE6DE00BD31AD /* RushHourWidgetExtension */;
+		};
 		6CC7D11E2FC3D11D00C612DA /* Exceptions for "lucky7" folder in "lucky7" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -76,6 +109,20 @@
 			);
 			target = E602C0162FC91EF30099CB1B /* RushHourShieldAction */;
 		};
+		E6F955AB2FCDDC6E00BD31AD /* Exceptions for "RushHourJailBreakMonitor" folder in "RushHourJailBreakMonitor" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = E6F9559C2FCDDC6E00BD31AD /* RushHourJailBreakMonitor */;
+		};
+		E6F955C92FCDE6DF00BD31AD /* Exceptions for "RushHourWidget" folder in "RushHourWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = E6F955AF2FCDE6DE00BD31AD /* RushHourWidgetExtension */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -83,6 +130,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				6CC7D11E2FC3D11D00C612DA /* Exceptions for "lucky7" folder in "lucky7" target */,
+				0ACAFE000001000000C612DA /* Exceptions for "lucky7" folder in "RushHourWidgetExtension" target */,
 			);
 			path = lucky7;
 			sourceTree = "<group>";
@@ -101,6 +149,22 @@
 				E602C0242FC91EF40099CB1B /* Exceptions for "RushHourShieldAction" folder in "RushHourShieldAction" target */,
 			);
 			path = RushHourShieldAction;
+			sourceTree = "<group>";
+		};
+		E6F955A02FCDDC6E00BD31AD /* RushHourJailBreakMonitor */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E6F955AB2FCDDC6E00BD31AD /* Exceptions for "RushHourJailBreakMonitor" folder in "RushHourJailBreakMonitor" target */,
+			);
+			path = RushHourJailBreakMonitor;
+			sourceTree = "<group>";
+		};
+		E6F955B52FCDE6DE00BD31AD /* RushHourWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E6F955C92FCDE6DF00BD31AD /* Exceptions for "RushHourWidget" folder in "RushHourWidgetExtension" target */,
+			);
+			path = RushHourWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -130,6 +194,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E6F9559A2FCDDC6E00BD31AD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E6F9559F2FCDDC6E00BD31AD /* DeviceActivity.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E6F955AD2FCDE6DE00BD31AD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E6F955B42FCDE6DE00BD31AD /* SwiftUI.framework in Frameworks */,
+				E6F955B22FCDE6DE00BD31AD /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -139,6 +220,8 @@
 				6CC7D1112FBD369000C612DA /* lucky7 */,
 				E602C0062FC91D3C0099CB1B /* RushHourShieldConfig */,
 				E602C0192FC91EF30099CB1B /* RushHourShieldAction */,
+				E6F955A02FCDDC6E00BD31AD /* RushHourJailBreakMonitor */,
+				E6F955B52FCDE6DE00BD31AD /* RushHourWidget */,
 				E602C0012FC91D3C0099CB1B /* Frameworks */,
 				6CC7D1102FBD369000C612DA /* Products */,
 			);
@@ -150,6 +233,8 @@
 				6CC7D10F2FBD369000C612DA /* lucky7.app */,
 				E602C0002FC91D3C0099CB1B /* RushHourShieldConfig.appex */,
 				E602C0172FC91EF30099CB1B /* RushHourShieldAction.appex */,
+				E6F9559D2FCDDC6E00BD31AD /* RushHourJailBreakMonitor.appex */,
+				E6F955B02FCDE6DE00BD31AD /* RushHourWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -159,6 +244,9 @@
 			children = (
 				E602C0022FC91D3C0099CB1B /* ManagedSettings.framework */,
 				E602C0042FC91D3C0099CB1B /* ManagedSettingsUI.framework */,
+				E6F9559E2FCDDC6E00BD31AD /* DeviceActivity.framework */,
+				E6F955B12FCDE6DE00BD31AD /* WidgetKit.framework */,
+				E6F955B32FCDE6DE00BD31AD /* SwiftUI.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -180,6 +268,8 @@
 			dependencies = (
 				E602C00C2FC91D3C0099CB1B /* PBXTargetDependency */,
 				E602C01F2FC91EF40099CB1B /* PBXTargetDependency */,
+				E6F955A62FCDDC6E00BD31AD /* PBXTargetDependency */,
+				E6F955C42FCDE6DF00BD31AD /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				6CC7D1112FBD369000C612DA /* lucky7 */,
@@ -235,6 +325,50 @@
 			productReference = E602C0172FC91EF30099CB1B /* RushHourShieldAction.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		E6F9559C2FCDDC6E00BD31AD /* RushHourJailBreakMonitor */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E6F955AA2FCDDC6E00BD31AD /* Build configuration list for PBXNativeTarget "RushHourJailBreakMonitor" */;
+			buildPhases = (
+				E6F955992FCDDC6E00BD31AD /* Sources */,
+				E6F9559A2FCDDC6E00BD31AD /* Frameworks */,
+				E6F9559B2FCDDC6E00BD31AD /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				E6F955A02FCDDC6E00BD31AD /* RushHourJailBreakMonitor */,
+			);
+			name = RushHourJailBreakMonitor;
+			packageProductDependencies = (
+			);
+			productName = RushHourJailBreakMonitor;
+			productReference = E6F9559D2FCDDC6E00BD31AD /* RushHourJailBreakMonitor.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		E6F955AF2FCDE6DE00BD31AD /* RushHourWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E6F955C62FCDE6DF00BD31AD /* Build configuration list for PBXNativeTarget "RushHourWidgetExtension" */;
+			buildPhases = (
+				E6F955AC2FCDE6DE00BD31AD /* Sources */,
+				E6F955AD2FCDE6DE00BD31AD /* Frameworks */,
+				E6F955AE2FCDE6DE00BD31AD /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				E6F955B52FCDE6DE00BD31AD /* RushHourWidget */,
+			);
+			name = RushHourWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = RushHourWidgetExtension;
+			productReference = E6F955B02FCDE6DE00BD31AD /* RushHourWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -252,6 +386,12 @@
 						CreatedOnToolsVersion = 26.5;
 					};
 					E602C0162FC91EF30099CB1B = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					E6F9559C2FCDDC6E00BD31AD = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					E6F955AF2FCDE6DE00BD31AD = {
 						CreatedOnToolsVersion = 26.5;
 					};
 				};
@@ -273,6 +413,8 @@
 				6CC7D10E2FBD369000C612DA /* lucky7 */,
 				E602BFFF2FC91D3C0099CB1B /* RushHourShieldConfig */,
 				E602C0162FC91EF30099CB1B /* RushHourShieldAction */,
+				E6F9559C2FCDDC6E00BD31AD /* RushHourJailBreakMonitor */,
+				E6F955AF2FCDE6DE00BD31AD /* RushHourWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -293,6 +435,20 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		E602C0152FC91EF30099CB1B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E6F9559B2FCDDC6E00BD31AD /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E6F955AE2FCDE6DE00BD31AD /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -323,6 +479,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E6F955992FCDDC6E00BD31AD /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E6F955AC2FCDE6DE00BD31AD /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -335,6 +505,16 @@
 			isa = PBXTargetDependency;
 			target = E602C0162FC91EF30099CB1B /* RushHourShieldAction */;
 			targetProxy = E602C01E2FC91EF40099CB1B /* PBXContainerItemProxy */;
+		};
+		E6F955A62FCDDC6E00BD31AD /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E6F9559C2FCDDC6E00BD31AD /* RushHourJailBreakMonitor */;
+			targetProxy = E6F955A52FCDDC6E00BD31AD /* PBXContainerItemProxy */;
+		};
+		E6F955C42FCDE6DF00BD31AD /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E6F955AF2FCDE6DE00BD31AD /* RushHourWidgetExtension */;
+			targetProxy = E6F955C32FCDE6DF00BD31AD /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -537,11 +717,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = NA9CXGVRMK;
+				ENABLE_DEBUG_DYLIB = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RushHourShieldConfig/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RushHourShieldConfig;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -567,11 +748,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = NA9CXGVRMK;
+				ENABLE_DEBUG_DYLIB = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RushHourShieldConfig/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RushHourShieldConfig;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -597,11 +779,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = NA9CXGVRMK;
+				ENABLE_DEBUG_DYLIB = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RushHourShieldAction/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RushHourShieldAction;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -627,11 +810,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = NA9CXGVRMK;
+				ENABLE_DEBUG_DYLIB = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RushHourShieldAction/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = RushHourShieldAction;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -639,6 +823,128 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.andrianangg.Traffic-Man.RushHourShieldAction";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		E6F955A82FCDDC6E00BD31AD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = RushHourJailBreakMonitor/RushHourJailBreakMonitor.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NA9CXGVRMK;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = RushHourJailBreakMonitor/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = RushHourJailBreakMonitor;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.andrianangg.Traffic-Man.RushHourJailBreakMonitor";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		E6F955A92FCDDC6E00BD31AD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = RushHourJailBreakMonitor/RushHourJailBreakMonitor.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NA9CXGVRMK;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = RushHourJailBreakMonitor/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = RushHourJailBreakMonitor;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.andrianangg.Traffic-Man.RushHourJailBreakMonitor";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		E6F955C72FCDE6DF00BD31AD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NA9CXGVRMK;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = RushHourWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = RushHourWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.andrianangg.Traffic-Man.RushHourWidget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		E6F955C82FCDE6DF00BD31AD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = NA9CXGVRMK;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = RushHourWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = RushHourWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.andrianangg.Traffic-Man.RushHourWidget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -685,6 +991,24 @@
 			buildConfigurations = (
 				E602C0222FC91EF40099CB1B /* Debug */,
 				E602C0232FC91EF40099CB1B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E6F955AA2FCDDC6E00BD31AD /* Build configuration list for PBXNativeTarget "RushHourJailBreakMonitor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E6F955A82FCDDC6E00BD31AD /* Debug */,
+				E6F955A92FCDDC6E00BD31AD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E6F955C62FCDE6DF00BD31AD /* Build configuration list for PBXNativeTarget "RushHourWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E6F955C72FCDE6DF00BD31AD /* Debug */,
+				E6F955C82FCDE6DF00BD31AD /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

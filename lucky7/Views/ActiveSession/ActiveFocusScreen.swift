@@ -1,3 +1,10 @@
+//
+//  ActiveFocusScreen.swift
+//  lucky7
+//
+//  Created by Andrian on 29/05/26.
+//
+
 import SwiftUI
 import SwiftData
 
@@ -62,7 +69,6 @@ struct ActiveFocusScreen: View {
                 appName: prompt.distraction.appOpened.isEmpty ? "this app" : prompt.distraction.appOpened,
                 countToday: 1,
                 onBackToSession: {
-                    SharedJailbreakStore.removeEvents(matching: prompt.tokenDataToClear)
                     modelContext.delete(prompt.distraction)
                     try? modelContext.save()
                     pendingPrompt = nil
@@ -74,7 +80,6 @@ struct ActiveFocusScreen: View {
                     #if os(iOS)
                     focusController.grantBreak(for: prompt.distraction)
                     #endif
-                    SharedJailbreakStore.removeEvents(matching: prompt.tokenDataToClear)
                     try? modelContext.save()
                     pendingPrompt = nil
                 }

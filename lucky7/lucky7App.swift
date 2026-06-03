@@ -10,9 +10,12 @@ import SwiftData
 
 @main
 struct lucky7App: App {
+    @StateObject private var focusController = FocusViewModel()
+
     var body: some Scene {
         WindowGroup {
             Loading()
+                .environmentObject(focusController)
                 .task {
                     await NotificationPermission.requestIfNeeded()
                 }
