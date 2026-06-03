@@ -8,7 +8,7 @@ import SwiftData
 import AVKit
 
 struct WrappedVideoScreen: View {
-    var sessionId: UUID
+    let kind: Kind
     var videoFrames: [UIImage] = []
 
     @Environment(\.modelContext) private var context
@@ -19,9 +19,13 @@ struct WrappedVideoScreen: View {
     @State private var player: AVPlayer?
     @State private var isPlaying = true
 
-    init(sessionId: UUID, videoFrames: [UIImage] = []) {
-        self.sessionId = sessionId
+    init(kind: Kind, videoFrames: [UIImage] = []) {
+        self.kind = kind
         self.videoFrames = videoFrames
+        // Only the session wrap is backed by a real record. Weekly/monthly wraps
+        // aren't generated yet, so their query intentionally matches nothing.
+        let sessionId: UUID
+        if case .session(let id) = kind { sessionId = id } else { sessionId = UUID() }
         _sessions = Query(filter: #Predicate<Session> { $0.id == sessionId })
     }
 
@@ -29,9 +33,21 @@ struct WrappedVideoScreen: View {
 
     private var session: Session? { sessions.first }
 
+    /// Weekly and monthly wraps don't have generated videos yet, so they show a
+    /// "coming soon" placeholder rather than a playable timelapse.
+    private var isWrapReady: Bool {
+        if case .session = kind { return true }
+        return false
+    }
+
     private var displayTitle: String {
-        let t = session?.title ?? ""
-        return t.isEmpty ? "Untitled session" : t
+        switch kind {
+        case .session:
+            let t = session?.title ?? ""
+            return t.isEmpty ? "Untitled session" : t
+        case .weekly(let title, _, _), .monthly(let title, _, _):
+            return title
+        }
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {
@@ -43,14 +59,24 @@ struct WrappedVideoScreen: View {
     }
 
     private var durationText: String {
-        formatDuration(session?.actualDuration ?? 0)
+        switch kind {
+        case .session:
+            return formatDuration(session?.actualDuration ?? 0)
+        case .weekly(_, _, let duration), .monthly(_, _, let duration):
+            return formatDuration(duration)
+        }
     }
 
     private var dateText: String {
-        guard let start = session?.startTime else { return "" }
-        return start
-            .formatted(.dateTime.day().month(.abbreviated).year())
-            .uppercased()
+        switch kind {
+        case .session:
+            guard let start = session?.startTime else { return "" }
+            return start
+                .formatted(.dateTime.day().month(.abbreviated).year())
+                .uppercased()
+        case .weekly(_, let periodLabel, _), .monthly(_, let periodLabel, _):
+            return periodLabel.uppercased()
+        }
     }
 
     private var videoURL: URL? {
@@ -94,6 +120,8 @@ struct WrappedVideoScreen: View {
             }
         }
         .frame(maxWidth: .infinity)
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             if let videoURL {
                 player = AVPlayer(url: videoURL)
@@ -179,29 +207,9 @@ struct WrappedVideoScreen: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 32))
             )
-
-            mediaOverlay
+            // The title / duration / date are already burned into the wrap video,
+            // so we no longer overlay them again here.
         }
-    }
-
-    private var mediaOverlay: some View {
-        VStack(spacing: 4) {
-            Text(displayTitle)
-                .font(.custom("Special Gothic Expanded One", size: 16))
-                .multilineTextAlignment(.center)
-
-            Text(durationText)
-                .font(.custom("Special Gothic Expanded One", size: 50))
-                .tracking(-1.5)
-
-            Text(dateText)
-                .font(.system(size: 12, weight: .bold))
-                .kerning(1.5)
-                .opacity(0.8)
-        }
-        .foregroundColor(.white)
-        .padding(.top, 40)
-        .padding(.horizontal, 16)
     }
 
     private var playPauseButton: some View {
@@ -213,6 +221,18 @@ struct WrappedVideoScreen: View {
                 .background(Circle().fill(Color.white))
                 .overlay(Circle().stroke(Color.black, lineWidth: 3))
         }
+        .disabled(!isWrapReady)
+        .opacity(isWrapReady ? 1 : 0.5)
+    }
+}
+
+extension WrappedVideoScreen {
+    /// The three sources a wrap can be built from. Only `.session` is backed by real
+    /// data today; `.weekly` and `.monthly` carry display info but show a placeholder.
+    enum Kind {
+        case session(UUID)
+        case weekly(title: String, periodLabel: String, duration: TimeInterval)
+        case monthly(title: String, periodLabel: String, duration: TimeInterval)
     }
 
     private func togglePlayback() {
@@ -227,7 +247,7 @@ struct WrappedVideoScreen: View {
 }
 
 #Preview {
-    WrappedVideoScreen(sessionId: UUID(), videoFrames: [])
+    WrappedVideoScreen(kind: .session(UUID()), videoFrames: [])
         .environmentObject(SessionRecordingViewModel())
         .modelContainer(for: Session.self, inMemory: true)
 }

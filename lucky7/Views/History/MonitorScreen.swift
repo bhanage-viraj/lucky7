@@ -135,10 +135,12 @@ struct MonitorScreen: View {
                     // The month wrap is only available once the month is complete.
                     if !month.isCurrentMonth && month.totalDuration > 0 {
                         NavigationLink {
-                            // TODO(analytics): WrappedVideoScreen was refactored to init(sessionId:),
-                            // but a monthly rewind has no single session. Temporary stub so main compiles.
                             WrappedVideoScreen(
-                                sessionId: UUID(),
+                                kind: .monthly(
+                                    title: "\(month.rewindName) Rewind",
+                                    periodLabel: month.title,
+                                    duration: month.totalDuration
+                                ),
                                 videoFrames: month.snapshotFrames
                             )
                         } label: {

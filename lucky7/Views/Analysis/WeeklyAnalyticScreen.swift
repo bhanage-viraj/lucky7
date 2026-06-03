@@ -267,11 +267,12 @@ struct WeeklyAnalyticScreen: View {
                             }
                             .padding()
                             
-                            // TODO(analytics): WrappedVideoScreen was refactored to init(sessionId:),
-                            // but a weekly rewind has no single session. Temporary stub so main compiles —
-                            // the weekly/monthly rewind needs reworking against the new API (owner: analytics).
                             NavigationLink(destination: WrappedVideoScreen(
-                                sessionId: UUID(),
+                                kind: .weekly(
+                                    title: "Weekly Rewind",
+                                    periodLabel: weekRangeLabel,
+                                    duration: weekTotalDuration
+                                ),
                                 videoFrames: videoFrames
                             )) {
                                 ZStack{
