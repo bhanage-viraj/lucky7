@@ -43,6 +43,7 @@ struct Loading: View {
                 }
             }
             .tint(.white)
+            .onAppear { UIApplication.shared.enableTapToDismissKeyboard() }
         } else {
             
             ZStack {
@@ -67,10 +68,15 @@ struct Loading: View {
                     )
             }
             .onAppear {
-                
+
                 // Start pulse animation
                 pulse = true
-                
+
+                // Tap anywhere outside a text field to dismiss the keyboard.
+                DispatchQueue.main.async {
+                    UIApplication.shared.enableTapToDismissKeyboard()
+                }
+
                 // Navigate after 3 sec
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                     withAnimation(.easeInOut) {

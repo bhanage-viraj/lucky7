@@ -2,20 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-
-    <!-- Custom Fonts -->
-    <key>UIAppFonts</key>
-    <array>
-        <string>SpecialGothicExpandedOne-Regular.ttf</string>
-    </array>
-
-    <!-- Camera Permission -->
-    <key>NSCameraUsageDescription</key>
-    <string>This app needs camera access.</string>
-
-    <!-- Microphone Permission (required if recording audio) -->
-    <key>NSMicrophoneUsageDescription</key>
-    <string>This app needs microphone access for recording audio.</string>
-
+	<key>UIAppFonts</key>
+	<array>
+		<string>SpecialGothicExpandedOne-Regular.ttf</string>
+	</array>
 </dict>
 </plist>

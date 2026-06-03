@@ -2,10 +2,10 @@ import SwiftUI
 
 // MARK: - Main View
 struct HomePage: View {
+    @EnvironmentObject private var sessionTimer: SessionTimerViewModel
     @State private var selectedHours = 2
     @State private var selectedMinutes = 30
-    @State private var selected: Int? = 2
-    @State private var selected1: Int? = 30
+    @State private var showRecordingPage = false
     
     var body: some View {
         NavigationStack {
@@ -27,35 +27,60 @@ struct HomePage: View {
                     .frame(width: 300, height: 300)
                     Image("TrafficPole")
                         
-                    VStack{
+                    VStack(spacing: 12) {
+                        
                         TrafficShell {
-                            NumberScroller(selected: $selected)
-                        }
-                        TrafficShell {
-                            NumberScroller(selected: $selected1)
-                        }
-                        TrafficShell {
-                            NavigationLink(destination: RecordingPage(
-                                durationSeconds: TimeInterval((selected ?? 0) * 3600 + (selected1 ?? 0) * 60)
-                            )) {
-                                Text("Enter")
-                                    .font(.custom("SpecialGothicExpandedOne-Regular", size: 15))
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 10)
+                            
+                            VStack(spacing: 6) {
+                                
+                                NumberScroller(selected: $selectedHours, range: 0...23)
+                                    .frame(height: 55)
+                                
+                                
                             }
-
                         }
                         
+                        
+                        TrafficShell {
+                            
+                            VStack(spacing: 6) {
+                                
+                                NumberScroller(selected: $selectedMinutes, range: 1...59)
+                                    .frame(height: 55)
+                                
+                                
+                            }
+                        }
+                        
+                        
+                        TrafficShell {
+                            
+                            Button {
+                                sessionTimer.configure(hours: selectedHours, minutes: selectedMinutes)
+                                showRecordingPage = true
+                            } label: {
+                                
+                                VStack(spacing: 4) {
+                                    
+                                    Image(systemName: "play.fill")
+                                        .font(.system(size: 20))
+                                    
+                                    Text("ENTER")
+                                        .font(.custom("Special Gothic Expanded One", size: 13))
+                                }
+                                .foregroundStyle(.white)
+                            }
+                        }
                     }
+                    .offset(x: 0, y: 150)
+                    .offset(y: -140)
                     .offset(x:0, y:150)
                     
                     .offset(y: -140)
                        
                     
                 }
-                .offset(y: -20)
+                .offset(y: -30)
                 .frame(width: 200, height: 200)
                 
                
@@ -64,11 +89,13 @@ struct HomePage: View {
                     
                 
                 Spacer()
-
-
+                
+                
+            }
+            .navigationDestination(isPresented: $showRecordingPage) {
+                RecordingPage()
             }
         }
-        .ignoresSafeArea(.container, edges: .bottom)
         }
     }
 }
@@ -111,7 +138,6 @@ struct HeaderView: View {
                 .offset(y: 60)
             }
         }
-        .padding(.top, 30)
     }
 }
 
@@ -138,5 +164,7 @@ struct TrafficLightCirclePicker: View {
 
 #Preview {
     HomePage()
+        .environmentObject(SessionTimerViewModel())
+        .environmentObject(SessionRecordingViewModel())
 }
 

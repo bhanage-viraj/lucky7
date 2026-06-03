@@ -9,6 +9,7 @@ import SwiftData
 struct SessionAnalytics: View {
     var sessionId: UUID
     var videoFrames: [UIImage] = []
+    var onClose: (() -> Void)? = nil
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -19,9 +20,10 @@ struct SessionAnalytics: View {
 
     @State private var isShowingWrappedVideo = false
 
-    init(sessionId: UUID, videoFrames: [UIImage] = []) {
+    init(sessionId: UUID, videoFrames: [UIImage] = [], onClose: (() -> Void)? = nil) {
         self.sessionId = sessionId
         self.videoFrames = videoFrames
+        self.onClose = onClose
         _sessions = Query(filter: #Predicate<Session> { $0.id == sessionId })
     }
 
@@ -73,8 +75,8 @@ struct SessionAnalytics: View {
     }
 
     private var shareableVideoURL: URL? {
-        // TODO: lookup Timelapse by session?.videoWrapId via a service
-        return nil
+        guard let path = session?.wrappedVideoPath else { return nil }
+        return URL(fileURLWithPath: path)
     }
 
     private var shareableText: String {
@@ -103,7 +105,7 @@ struct SessionAnalytics: View {
 
             VStack {
                 HStack {
-                    Button(action: { NotificationCenter.default.post(name: .returnToHome, object: nil) }) {
+                    Button(action: close) {
                         Image(systemName: "xmark")
                             .font(.system(size: 20, weight: .bold))
                             .foregroundColor(.white)
@@ -277,12 +279,20 @@ struct SessionAnalytics: View {
 
     // MARK: - Actions
 
+    private func close() {
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
+        }
+    }
+
     private func deleteSession() {
         if let session = session {
             context.delete(session)
             try? context.save()
         }
-        dismiss()
+        close()
     }
 }
 

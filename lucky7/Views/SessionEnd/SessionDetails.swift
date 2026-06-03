@@ -13,19 +13,21 @@ import UIKit
 struct SessionDetails: View {
     var sessionId: UUID
     var videoFrames: [UIImage] = []
+    var onSave: (() -> Void)? = nil
+    var onFlowComplete: (() -> Void)? = nil
     
     @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var sessionRecording: SessionRecordingViewModel
     @Query private var sessions: [Session]
     
     @State private var sessionTitle = ""
     @State private var sessionDescription = ""
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var uploadedSnapshots: [UIImage] = []
-    @State private var isShowingAnalytics = false
     @State private var showImageSourceDialog = false
     @State private var showCamera = false
     @State private var showLibrary = false
+    @State private var hasExitedFlow = false
 
     private let maxSnapshots = 6
     
@@ -82,9 +84,7 @@ struct SessionDetails: View {
                 VStack (spacing: 4) {
                     
                     HStack {
-                        Button(action: {
-                            // TODO: wire this button to pop-up modal that can delete the session
-                        }) {
+                        Button(action: exitToHome) {
                             Image(systemName: "xmark")
                                 .font(.system(size: 18, weight: .heavy))
                                 .foregroundColor(.white)
@@ -238,9 +238,12 @@ struct SessionDetails: View {
                             session.snapshotImages = uploadedSnapshots.compactMap {
                                 $0.jpegData(compressionQuality: 0.8)
                             }
+                            if let path = sessionRecording.finalVideoURL?.path {
+                                session.wrappedVideoPath = path
+                            }
                             try? context.save()
                         }
-                        isShowingAnalytics = true
+                        onSave?()
                     }) {
                         Text("SAVE SESSION")
                             .font(.custom("Special Gothic Expanded One", size: 16))
@@ -259,9 +262,12 @@ struct SessionDetails: View {
                 }
             }
         }
-        .fullScreenCover(isPresented: $isShowingAnalytics, onDismiss: { dismiss() }) {
-            SessionAnalytics(sessionId: sessionId, videoFrames: videoFrames)
-        }
+    }
+
+    private func exitToHome() {
+        guard !hasExitedFlow else { return }
+        hasExitedFlow = true
+        onFlowComplete?()
     }
 }
 
@@ -390,5 +396,6 @@ struct CardInput<Content: View>: View {
         .compactMap { UIImage(named: $0) }
 
     return SessionDetails(sessionId: UUID(), videoFrames: dummyFrames)
+        .environmentObject(SessionRecordingViewModel())
         .modelContainer(for: Session.self, inMemory: true)
 }

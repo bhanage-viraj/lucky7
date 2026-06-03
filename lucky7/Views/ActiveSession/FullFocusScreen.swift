@@ -6,8 +6,11 @@ import AVFoundation
 import Combine
 
 struct FullFocusScreen: View {
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var camera = FocusCameraManager()
-    @StateObject private var countdown = TimerManager()
+    @EnvironmentObject private var countdown: SessionTimerViewModel
+    @EnvironmentObject private var sessionRecording: SessionRecordingViewModel
+    @State private var showCrashSession = false
     
     var body: some View {
         NavigationStack{
@@ -44,7 +47,7 @@ struct FullFocusScreen: View {
                         Spacer()
                         
                         Button {
-                            
+                            dismiss()
                         } label: {
                             Image(systemName: "arrow.up.right.and.arrow.down.left")
                                 .foregroundColor(.white)
@@ -113,7 +116,7 @@ struct FullFocusScreen: View {
                             .frame(width: 110, height: 102)
                             .clipped()
                             .onTapGesture {
-                                countdown.isRunning ? countdown.pause() : countdown.start()
+                                countdown.toggle()
                             }
                         }
                         .foregroundStyle(.white)
@@ -121,10 +124,6 @@ struct FullFocusScreen: View {
                         .frame(height: 136)
                         .zIndex(2.0)
                         .offset(y: -8)
-                        .onAppear {
-                            countdown.set(hours: 2, minutes: 30)
-                            countdown.start()
-                        }
                     }
                     .padding(.top, 36)
                     
@@ -141,7 +140,7 @@ struct FullFocusScreen: View {
                     
                     if (!countdown.isRunning) {
                         Button {
-                            
+                            endSessionFromFullFocus()
                         } label: {
                             Text("END SESSION")
                                 .foregroundColor(.warningRed)
@@ -154,6 +153,32 @@ struct FullFocusScreen: View {
                     }
                 }
             }
+        }
+        .onChange(of: countdown.showFinishSession) { _, show in
+            if show {
+                let wallClock = TimeInterval(countdown.elapsedSeconds)
+                sessionRecording.stopRecordingAndExport(wallClockSeconds: wallClock) { }
+            }
+        }
+        .fullScreenCover(isPresented: $countdown.showFinishSession) {
+            FinishSessionScreen(onFlowComplete: {
+                countdown.showFinishSession = false
+                countdown.returnToHome()
+            })
+        }
+        .fullScreenCover(isPresented: $showCrashSession) {
+            CrashSessionScreen(onFlowComplete: {
+                showCrashSession = false
+                countdown.returnToHome()
+            })
+        }
+    }
+
+    private func endSessionFromFullFocus() {
+        countdown.pause()
+        let wallClock = TimeInterval(countdown.elapsedSeconds)
+        sessionRecording.stopRecordingAndExport(wallClockSeconds: wallClock) {
+            showCrashSession = true
         }
     }
 }
@@ -286,59 +311,3 @@ class FocusCameraManager: ObservableObject {
     }
 }
 
-// MARK: - TimeManager
-
-class TimerManager: ObservableObject {
-    @Published var hours: Int = 0
-    @Published var minutes: Int = 0
-    @Published var seconds: Int = 0
-    @Published var isRunning: Bool = false
-    
-    private var timer: Timer?
-    private var totalSeconds: Int = 0
-    
-    // Set the countdown duration
-    func set(hours: Int, minutes: Int) {
-        self.totalSeconds = (hours * 3600) + (minutes * 60)
-        self.hours = hours
-        self.minutes = minutes
-        self.seconds = 0
-    }
-    
-    func start() {
-        guard totalSeconds > 0 else { return }
-        isRunning = true
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-            self.tick()
-        }
-    }
-    
-    func pause() {
-        isRunning = false
-        timer?.invalidate()
-    }
-    
-    func reset() {
-        timer?.invalidate()
-        isRunning = false
-        totalSeconds = 0
-        hours = 0
-        minutes = 0
-        seconds = 0
-    }
-    
-    private func tick() {
-        guard totalSeconds > 0 else {
-            pause()
-            return
-        }
-        totalSeconds -= 1
-        hours   = totalSeconds / 3600
-        minutes = (totalSeconds % 3600) / 60
-        seconds = totalSeconds % 60
-    }
-    
-    deinit {
-        timer?.invalidate()
-    }
-}

@@ -10,15 +10,24 @@ import SwiftData
 import PhotosUI
 
 struct WeeklyAnalyticScreen: View {
+    /// The sessions that fall in this week (passed in from the history screen).
+    var sessions: [Session] = []
+    /// First day of the week these stats describe.
+    var weekStart: Date = Date()
     var videoFrames: [UIImage] = []
-    
+
+    /// All recorded distractions; filtered down to this week's sessions below.
+    @Query private var allDistractions: [Distraction]
+
+    private let calendar = Calendar.current
+
     private var displayFrame: [UIImage] {
         guard !videoFrames.isEmpty else { return [] }
-        
+
         if videoFrames.count <= 3 {
             return videoFrames
         }
-        
+
         let firstFrame = videoFrames.first!
         let middleFrame = videoFrames[videoFrames.count / 2]
         let lastFrame = videoFrames.last!
@@ -26,25 +35,137 @@ struct WeeklyAnalyticScreen: View {
         return [firstFrame, middleFrame, lastFrame]
     }
 
-    // Placeholder week summary until real weekly aggregation is wired up.
-    private let weekRangeLabel = "24 - 30 May 2026"
-    private let weekTotalDuration: TimeInterval = 12 * 3600 + 30 * 60
+    // MARK: - Weekly aggregation
 
-    var sessionStats = [
-        ["title1": "FOCUS DURATION",
-         "value1": "6h 48m",
-         "title2": "DISTRACTED DURATION",
-         "value2": "1h 08m"],
-        ["title1": "AVG SESSION LENGTH",
-         "value1": "68.5 minutes",
-         "title2": "AVG DISTRACTED LENGTH",
-         "value2": "3.7 minutes"],
-        ["title1": "SESSION COMPLETED",
-         "value1": "7 times",
-         "title2": "DISTRACTED FREQUENCY",
-         "value2": "19 times"],
-    ]
-    
+    private var sessionIDs: Set<UUID> { Set(sessions.map(\.id)) }
+
+    private var weekDistractions: [Distraction] {
+        allDistractions.filter { sessionIDs.contains($0.sessionId) }
+    }
+
+    private var weekTotalDuration: TimeInterval {
+        sessions.reduce(0) { $0 + $1.actualDuration }
+    }
+
+    private var totalDistracted: TimeInterval {
+        weekDistractions.reduce(0) { $0 + $1.distractionDuration }
+    }
+
+    private var totalFocus: TimeInterval {
+        max(weekTotalDuration - totalDistracted, 0)
+    }
+
+    private var avgSessionLength: TimeInterval {
+        sessions.isEmpty ? 0 : weekTotalDuration / Double(sessions.count)
+    }
+
+    private var avgDistractedLength: TimeInterval {
+        weekDistractions.isEmpty ? 0 : totalDistracted / Double(weekDistractions.count)
+    }
+
+    private var totalSessionTimeText: String {
+        TimeFormatter.shortDuration(weekTotalDuration)
+    }
+
+    private var weekRangeLabel: String {
+        let end = calendar.date(byAdding: .day, value: 6, to: weekStart) ?? weekStart
+        if calendar.isDate(weekStart, equalTo: end, toGranularity: .month) {
+            return "\(formatted(weekStart, "d")) - \(formatted(end, "d MMMM yyyy"))"
+        } else if calendar.isDate(weekStart, equalTo: end, toGranularity: .year) {
+            return "\(formatted(weekStart, "d MMM")) - \(formatted(end, "d MMM yyyy"))"
+        } else {
+            return "\(formatted(weekStart, "d MMM yyyy")) - \(formatted(end, "d MMM yyyy"))"
+        }
+    }
+
+    private var sessionStats: [[String: String]] {
+        [
+            ["title1": "FOCUS DURATION",
+             "value1": TimeFormatter.shortDuration(totalFocus),
+             "title2": "DISTRACTED DURATION",
+             "value2": TimeFormatter.shortDuration(totalDistracted)],
+            ["title1": "AVG SESSION LENGTH",
+             "value1": minutesText(avgSessionLength),
+             "title2": "AVG DISTRACTED LENGTH",
+             "value2": minutesText(avgDistractedLength)],
+            ["title1": "SESSION COMPLETED",
+             "value1": "\(sessions.count) times",
+             "title2": "DISTRACTED FREQUENCY",
+             "value2": "\(weekDistractions.count) times"],
+        ]
+    }
+
+    /// Per-day focus / distracted split for the seven days of the week.
+    private var dayStats: [DayStat] {
+        (0..<7).map { offset in
+            let day = calendar.date(byAdding: .day, value: offset, to: weekStart) ?? weekStart
+            let daySessions = sessions.filter { calendar.isDate($0.startTime, inSameDayAs: day) }
+            let dayIDs = Set(daySessions.map(\.id))
+            let distracted = weekDistractions
+                .filter { dayIDs.contains($0.sessionId) }
+                .reduce(0) { $0 + $1.distractionDuration }
+            let total = daySessions.reduce(0) { $0 + $1.actualDuration }
+            return DayStat(
+                date: day,
+                focusMinutes: max(total - distracted, 0) / 60,
+                distractedMinutes: distracted / 60,
+                hasSessions: !daySessions.isEmpty
+            )
+        }
+    }
+
+    private var weekdayBars: [BarChartData] {
+        dayStats.map {
+            BarChartData(label: formatted($0.date, "EEEEE"),
+                         primary: $0.focusMinutes,
+                         secondary: $0.distractedMinutes)
+        }
+    }
+
+    /// Scales the chart axis to the busiest day, in 30-minute steps (min 2h).
+    private var chartConfig: BarChartConfig {
+        var config = BarChartConfig()
+        let maxMinutes = dayStats.map { $0.focusMinutes + $0.distractedMinutes }.max() ?? 0
+        let step = max(30, Int(ceil(maxMinutes / 4 / 30)) * 30)
+        let top = step * 4
+        config.maxValue = Double(top)
+        config.gridLines = [top, top - step, top - 2 * step, top - 3 * step, 0]
+        return config
+    }
+
+    private var mostFocusedDayText: String {
+        guard let best = dayStats.filter({ $0.hasSessions })
+            .max(by: { $0.focusMinutes < $1.focusMinutes }) else { return "—" }
+        return formatted(best.date, "EEEE")
+    }
+
+    private var leastFocusedDayText: String {
+        guard let worst = dayStats.filter({ $0.hasSessions })
+            .min(by: { $0.focusMinutes < $1.focusMinutes }) else { return "—" }
+        return formatted(worst.date, "EEEE")
+    }
+
+    /// The three apps that ate the most time this week.
+    private var topDistractingApps: [(name: String, duration: TimeInterval)] {
+        Dictionary(grouping: weekDistractions, by: { $0.appOpened })
+            .map { (name: $0.key, duration: $0.value.reduce(0) { $0 + $1.distractionDuration }) }
+            .sorted { $0.duration > $1.duration }
+            .prefix(3)
+            .map { $0 }
+    }
+
+    // MARK: - Formatting helpers
+
+    private func formatted(_ date: Date, _ format: String) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = format
+        return formatter.string(from: date)
+    }
+
+    private func minutesText(_ seconds: TimeInterval) -> String {
+        String(format: "%.1f minutes", seconds / 60)
+    }
+
     var body: some View {
             ZStack{
                 Color("CanvasBlue")
@@ -84,10 +205,10 @@ struct WeeklyAnalyticScreen: View {
                                     ForEach([CGPoint(x: -2, y: -2), CGPoint(x: 0, y: -2), CGPoint(x: 2, y: -2),
                                              CGPoint(x: -2, y: 0),                         CGPoint(x: 2, y: 0),
                                              CGPoint(x: -2, y: 2),  CGPoint(x: 0, y: 2),  CGPoint(x: 2, y: 2)], id: \.self) { p in
-                                        Text("12h 30m")
+                                        Text(totalSessionTimeText)
                                             .offset(x: p.x, y: p.y)
                                     }
-                                    Text("12h 30m")
+                                    Text(totalSessionTimeText)
                                 }
                                 .foregroundColor(.black)
                                 .font(.custom("Special Gothic Expanded One", size: 50))
@@ -97,11 +218,11 @@ struct WeeklyAnalyticScreen: View {
                                     ForEach([CGPoint(x: -2, y: -2), CGPoint(x: 0, y: -2), CGPoint(x: 2, y: -2),
                                              CGPoint(x: -2, y: 0),                         CGPoint(x: 2, y: 0),
                                              CGPoint(x: -2, y: 2),  CGPoint(x: 0, y: 2),  CGPoint(x: 2, y: 2)], id: \.self) { p in
-                                        Text("12h 30m")
+                                        Text(totalSessionTimeText)
                                             .foregroundColor(.black)
                                             .offset(x: p.x, y: p.y)
                                     }
-                                    Text("12h 30m")
+                                    Text(totalSessionTimeText)
                                 }
                                 .font(.custom("Special Gothic Expanded One", size: 50))
                             }
@@ -182,16 +303,9 @@ struct WeeklyAnalyticScreen: View {
                         }
                         
                         CardInput(title: "WHAT YOUR WEEK LOOK LIKE?", backgroundColor: .white) {
-                            BarChartView(data: [
-                                BarChartData(label: "M", primary: 80, secondary: 10),
-                                BarChartData(label: "T", primary: 40, secondary: 18),
-                                BarChartData(label: "W", primary: 0,  secondary: 0),
-                                BarChartData(label: "T", primary: 100, secondary: 22),
-                                BarChartData(label: "F", primary: 30, secondary: 18),
-                                BarChartData(label: "S", primary: 88, secondary: 10),
-                            ])
-                            .frame(height: 300)
-                            .padding(24)
+                            BarChartView(data: weekdayBars, config: chartConfig)
+                                .frame(height: 300)
+                                .padding(24)
                         }
                         .padding(.top, 12)
                         
@@ -207,8 +321,8 @@ struct WeeklyAnalyticScreen: View {
                                 VStack(){
                                     Text("MOST FOCUSED DAY")
                                         .font(.system(size: 10))
-                                    
-                                    Text("Tuesday")
+
+                                    Text(mostFocusedDayText)
                                         .font(.custom("Special Gothic Expanded One", size: 15))
                                         .padding(.top, 1)
                                 }
@@ -226,8 +340,8 @@ struct WeeklyAnalyticScreen: View {
                                 VStack(){
                                     Text("LEAST FOCUSED DAY")
                                         .font(.system(size: 10))
-                                    
-                                    Text("Wednesday")
+
+                                    Text(leastFocusedDayText)
                                         .font(.custom("Special Gothic Expanded One", size: 15))
                                         .padding(.top, 1)
                                 }
@@ -237,22 +351,30 @@ struct WeeklyAnalyticScreen: View {
                         
                         CardInput(title: "MOST DISTRACTING APPS", backgroundColor: .white) {
                             VStack(spacing: 0) {
-                                ForEach(0..<3) { index in
-                                    HStack {
-                                        HStack(spacing: 16) {
-                                            Text("\(index + 1)")
-                                            Image(systemName: "play.fill")
-                                                .font(.system(size: 32))
-                                            Text("Tiktok")
-                                                .font(.custom("Special Gothic Expanded One", size: 15))
+                                if topDistractingApps.isEmpty {
+                                    Text("No distractions this week 🎉")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.gray)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 32)
+                                } else {
+                                    ForEach(Array(topDistractingApps.enumerated()), id: \.offset) { index, app in
+                                        HStack {
+                                            HStack(spacing: 16) {
+                                                Text("\(index + 1)")
+                                                Image(systemName: "play.fill")
+                                                    .font(.system(size: 32))
+                                                Text(app.name)
+                                                    .font(.custom("Special Gothic Expanded One", size: 15))
+                                            }
+                                            Spacer()
+                                            Text(TimeFormatter.shortDuration(app.duration))
                                         }
-                                        Spacer()
-                                        Text("31 mins")
-                                    }
-                                    .padding()
+                                        .padding()
 
-                                    if index < 2 {
-                                        Divider()
+                                        if index < topDistractingApps.count - 1 {
+                                            Divider()
+                                        }
                                     }
                                 }
                             }
@@ -266,12 +388,39 @@ struct WeeklyAnalyticScreen: View {
     }
 }
 
+// MARK: - Per-day model
+
+private struct DayStat {
+    let date: Date
+    let focusMinutes: Double
+    let distractedMinutes: Double
+    let hasSessions: Bool
+}
+
 #Preview {
     let dummyFrames = ["dummySnapshot1", "dummySnapshot2", "dummySnapshot3"]
         .compactMap { UIImage(named: $0) }
 
-    NavigationStack {
-        WeeklyAnalyticScreen(videoFrames: dummyFrames)
+    let calendar = Calendar.current
+    let now = Date()
+    let weekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
+    let sampleSessions: [Session] = (0..<4).map { offset in
+        let start = calendar.date(byAdding: .day, value: offset, to: weekStart) ?? weekStart
+        return Session(
+            userId: UUID(),
+            duration: 3600,
+            startTime: start,
+            endTime: start.addingTimeInterval(TimeInterval(3600 + offset * 600)),
+            title: "Session \(offset + 1)"
+        )
     }
-    .modelContainer(for: Session.self, inMemory: true)
+
+    return NavigationStack {
+        WeeklyAnalyticScreen(
+            sessions: sampleSessions,
+            weekStart: weekStart,
+            videoFrames: dummyFrames
+        )
+    }
+    .modelContainer(for: [Session.self, Distraction.self], inMemory: true)
 }

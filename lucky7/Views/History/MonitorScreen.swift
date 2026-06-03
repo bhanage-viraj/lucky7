@@ -276,11 +276,23 @@ struct WeekCard: View {
 
             if isExpanded {
                 ForEach(week.sessions) { session in
-                    SessionRow(session: session)
+                    NavigationLink {
+                        SessionAnalytics(
+                            sessionId: session.id,
+                            videoFrames: session.snapshotImages.compactMap { UIImage(data: $0) }
+                        )
+                    } label: {
+                        SessionRow(session: session)
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 NavigationLink {
-                    WeeklyAnalyticScreen(videoFrames: week.snapshotFrames)
+                    WeeklyAnalyticScreen(
+                        sessions: week.sessions,
+                        weekStart: week.id,
+                        videoFrames: week.snapshotFrames
+                    )
                 } label: {
                     Text("VIEW WEEKLY REWIND")
                         .font(.system(size: 14, weight: .heavy))

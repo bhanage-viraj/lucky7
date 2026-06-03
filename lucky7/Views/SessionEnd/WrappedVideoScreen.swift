@@ -5,6 +5,7 @@
 
 import SwiftUI
 import SwiftData
+import AVKit
 
 struct WrappedVideoScreen: View {
     let kind: Kind
@@ -12,10 +13,11 @@ struct WrappedVideoScreen: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var sessionRecording: SessionRecordingViewModel
 
     @Query private var sessions: [Session]
-
-    @State private var isPlaying: Bool = true
+    @State private var player: AVPlayer?
+    @State private var isPlaying = true
 
     init(kind: Kind, videoFrames: [UIImage] = []) {
         self.kind = kind
@@ -48,7 +50,6 @@ struct WrappedVideoScreen: View {
         }
     }
 
-    // TODO: move into Utilities/TimeFormatter.swift once that file is filled
     private func formatDuration(_ seconds: TimeInterval) -> String {
         let total = max(Int(seconds), 0)
         let h = total / 3600
@@ -78,11 +79,14 @@ struct WrappedVideoScreen: View {
         }
     }
 
-    // MARK: - Share content
-    private var shareableVideoURL: URL? {
-        // TODO: resolve session?.videoWrapId → Timelapse → final video URL.
-        return nil
+    private var videoURL: URL? {
+        if let path = session?.wrappedVideoPath {
+            return URL(fileURLWithPath: path)
+        }
+        return sessionRecording.finalVideoURL
     }
+
+    private var shareableVideoURL: URL? { videoURL }
 
     private var shareableText: String {
         "\(displayTitle) — \(durationText) on \(dateText)"
@@ -118,6 +122,16 @@ struct WrappedVideoScreen: View {
         .frame(maxWidth: .infinity)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        .onAppear {
+            if let videoURL {
+                player = AVPlayer(url: videoURL)
+                player?.play()
+            }
+        }
+        .onDisappear {
+            player?.pause()
+            player = nil
+        }
     }
 
     // MARK: - Subviews
@@ -160,9 +174,10 @@ struct WrappedVideoScreen: View {
 
     private var mediaCard: some View {
         ZStack(alignment: .top) {
-            // TODO: replace with AVPlayer/VideoPlayer
             Group {
-                if let firstFrame = videoFrames.first {
+                if let player {
+                    VideoPlayer(player: player)
+                } else if let firstFrame = videoFrames.first {
                     Image(uiImage: firstFrame)
                         .resizable()
                         .scaledToFill()
@@ -177,6 +192,7 @@ struct WrappedVideoScreen: View {
                         )
                 }
             }
+            .frame(height: 420)
             .clipShape(RoundedRectangle(cornerRadius: 32))
             .background(
                 RoundedRectangle(cornerRadius: 32)
@@ -191,44 +207,13 @@ struct WrappedVideoScreen: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 32))
             )
-
-            mediaOverlay
+            // The title / duration / date are already burned into the wrap video,
+            // so we no longer overlay them again here.
         }
-    }
-
-    private var mediaOverlay: some View {
-        VStack(spacing: 4) {
-            Text(displayTitle)
-                .font(.custom("Special Gothic Expanded One", size: 16))
-                .multilineTextAlignment(.center)
-
-            Text(durationText)
-                .font(.custom("Special Gothic Expanded One", size: 50))
-                .tracking(-1.5)
-
-            Text(dateText)
-                .font(.system(size: 12, weight: .bold))
-                .kerning(1.5)
-                .opacity(0.8)
-
-            if !isWrapReady {
-                Text("WRAP VIDEO COMING SOON")
-                    .font(.system(size: 11, weight: .bold))
-                    .kerning(1.5)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Capsule().fill(Color.black.opacity(0.35)))
-                    .padding(.top, 8)
-            }
-        }
-        .foregroundColor(.white)
-        .padding(.top, 40)
-        .padding(.horizontal, 16)
     }
 
     private var playPauseButton: some View {
-        // TODO: bind to actual AVPlayer.timeControlStatus
-        Button(action: { isPlaying.toggle() }) {
+        Button(action: togglePlayback) {
             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                 .font(.system(size: 24, weight: .black))
                 .foregroundColor(.black)
@@ -249,9 +234,20 @@ extension WrappedVideoScreen {
         case weekly(title: String, periodLabel: String, duration: TimeInterval)
         case monthly(title: String, periodLabel: String, duration: TimeInterval)
     }
+
+    private func togglePlayback() {
+        guard let player else { return }
+        if isPlaying {
+            player.pause()
+        } else {
+            player.play()
+        }
+        isPlaying.toggle()
+    }
 }
 
 #Preview {
     WrappedVideoScreen(kind: .session(UUID()), videoFrames: [])
+        .environmentObject(SessionRecordingViewModel())
         .modelContainer(for: Session.self, inMemory: true)
 }

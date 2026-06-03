@@ -21,6 +21,7 @@ final class Session: Identifiable {
     
     // Linked Media
     var videoWrapId: UUID?         // Links to the final Timelapse once generated
+    var wrappedVideoPath: String?  // Temp-file path to the 30s wrapped export
     
     var title: String
     var summary: String
@@ -29,13 +30,14 @@ final class Session: Identifiable {
     // file via externalStorage so large images don't bloat the DB.
     @Attribute(.externalStorage) var snapshotImages: [Data]
 
-    init(id: UUID = UUID(), userId: UUID, duration: TimeInterval, startTime: Date = Date(), endTime: Date? = nil, videoWrapId: UUID? = nil, title: String = "", summary: String = "", snapshotImages: [Data] = []) {
+    init(id: UUID = UUID(), userId: UUID, duration: TimeInterval, startTime: Date = Date(), endTime: Date? = nil, videoWrapId: UUID? = nil, wrappedVideoPath: String? = nil, title: String = "", summary: String = "", snapshotImages: [Data] = []) {
         self.id = id
         self.userId = userId
         self.duration = duration
         self.startTime = startTime
         self.endTime = endTime
         self.videoWrapId = videoWrapId
+        self.wrappedVideoPath = wrappedVideoPath
         self.title = title
         self.summary = summary
         self.snapshotImages = snapshotImages
