@@ -6,7 +6,7 @@
 import SwiftUI
 
 struct Loading: View {
-
+    @AppStorage("didShowAppBlockOnboarding") private var didShowOnboarding = false
     @State private var pulse = false
     @State private var showHome = false
 
@@ -31,32 +31,39 @@ struct Loading: View {
     }
 
     var body: some View {
-        
-        if showHome {
-            TabView {
-                Tab("Rush Hour", systemImage: "rays") {
-                    HomePage()
-                }
 
-                Tab("Monitor", systemImage: "play.square.stack.fill") {
-                    MonitorScreen()
+        if showHome {
+            // jailbreak: gate the app behind the app-block onboarding the first launch
+            if didShowOnboarding {
+                TabView {
+                    Tab("Rush Hour", systemImage: "rays") {
+                        HomePage()
+                    }
+
+                    Tab("Monitor", systemImage: "play.square.stack.fill") {
+                        MonitorScreen()
+                    }
                 }
+                .tint(.white)
+                .onAppear { UIApplication.shared.enableTapToDismissKeyboard() }
+            } else {
+                AppBlockOnboardingScreen(onDone: {
+                    didShowOnboarding = true
+                })
             }
-            .tint(.white)
-            .onAppear { UIApplication.shared.enableTapToDismissKeyboard() }
         } else {
-            
+
             ZStack {
-                
+
                 Color.blue
                     .ignoresSafeArea()
-                
+
                 Image("load6")
-                
+
                 Image("load7")
-                
+
                 Image("load8")
-                
+
                 // Pulse Animation
                 Image("Rushhourload")
                     .scaleEffect(pulse ? 1.08 : 0.92)

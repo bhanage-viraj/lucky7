@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import SwiftData
 import AVFoundation
 
 // MARK: - Main View
@@ -15,8 +16,29 @@ struct RecordingPage: View {
     @State private var showCrashSession = false
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var sessionTimer: SessionTimerViewModel
     @EnvironmentObject private var sessionRecording: SessionRecordingViewModel
+
+    #if os(iOS)
+    @EnvironmentObject private var focusController: FocusViewModel
+    #endif
+
+    // jailbreak: distraction prompt + in-app unlock card + records sheet
+    @State private var sessionId = UUID()
+    @State private var pendingPrompt: PendingPrompt?
+    @State private var unlock: UnlockInfo?
+
+    struct PendingPrompt: Identifiable {
+        let id = UUID()
+        let distraction: Distraction
+        let tokenDataToClear: Data?
+    }
+
+    struct UnlockInfo: Identifiable {
+        let id = UUID()
+        let appName: String
+    }
 
     var body: some View {
 
@@ -25,19 +47,14 @@ struct RecordingPage: View {
             CameraPreview(session: sessionRecording.captureSession)
                 .ignoresSafeArea()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            
-            
+
             VStack {
-                VStack() {
-                    
-                    
-                    
+                VStack {
+
                     // EXPAND BUTTON
-                    
                     Button(action: {
                         showFullFocusScreen = true
                     }) {
-                        
                         Image(systemName: "arrow.down.left.and.arrow.up.right.circle.fill")
                             .font(.system(size: 42))
                             .symbolRenderingMode(.hierarchical)
@@ -48,9 +65,8 @@ struct RecordingPage: View {
                                     .frame(width: 30, height: 30)
                             )
                     }
-                    
+
                     // CAMERA SWITCH BUTTON
-                    
                     Button(action: {
                         sessionRecording.switchCamera()
                     }) {
@@ -67,92 +83,81 @@ struct RecordingPage: View {
 
                 Spacer()
                 Group {
-                    
+
                     VStack(spacing: 20) {
-                        
+
                         ZStack {
-                            
+
                             Image("group30")
                                 .offset(x: 0, y: 80 + groupOffset)
-                            
+
                             Image("Rectangle39")
                                 .offset(x: 0, y: 200 + groupOffset)
-                            
+
                             Image("Frame35")
                                 .resizable()
-                                    .scaledToFit() // or .scaledToFill()
-                                    .frame(width: 300, height: 250)
-                                    .offset(x: 0, y: 70 + groupOffset)
-                                
-                                
-                            
+                                .scaledToFit()
+                                .frame(width: 300, height: 250)
+                                .offset(x: 0, y: 70 + groupOffset)
+
                             HStack(spacing: -50) {
-                                
+
                                 TrafficShell {
-                                    
                                     VStack(spacing: 2) {
-                                        
                                         Text("\(sessionTimer.hours)")
                                             .font(.custom("Special Gothic Expanded One", size: 34))
-                                        
                                         Text("Hours")
                                             .font(.custom("Special Gothic Expanded One", size: 10))
                                     }
                                     .foregroundStyle(.white)
                                 }
                                 .scaleEffect(0.70)
-                                
-                                
+
                                 TrafficShell {
-                                    
                                     VStack(spacing: 2) {
-                                        
                                         Text(String(format: "%02d", sessionTimer.minutes))
                                             .font(.custom("Special Gothic Expanded One", size: 34))
-                                        
                                         Text("Minutes")
                                             .font(.custom("Special Gothic Expanded One", size: 10))
                                     }
                                     .foregroundStyle(.white)
                                 }
                                 .scaleEffect(0.70)
-                                
-                                
+
                                 TrafficShell {
-                                    
                                     Button(action: {
-                                        
                                         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                                            
                                             if !hasStarted {
+                                                // FIRST START — begin recording + block distracting apps
                                                 hasStarted = true
                                                 sessionRecording.startRecording(
                                                     plannedSessionSeconds: TimeInterval(sessionTimer.configuredTotalSeconds)
                                                 )
                                                 sessionTimer.start()
                                                 groupOffset = 70
+                                                #if os(iOS)
+                                                focusController.engage()   // jailbreak: apply the shield
+                                                #endif
                                             } else if sessionTimer.isRunning {
+                                                // PAUSE recording (the block stays on for the whole session)
                                                 sessionTimer.pause()
                                                 sessionRecording.pauseRecording()
                                                 groupOffset = 0
                                             } else {
+                                                // RESUME recording
                                                 sessionTimer.start()
                                                 sessionRecording.resumeRecording()
                                                 groupOffset = 70
                                             }
                                         }
-                                        
                                     }) {
-                                        
                                         VStack(spacing: 4) {
-                                            
                                             Image(systemName:
                                                     !hasStarted
                                                   ? "play.fill"
                                                   : (sessionTimer.isRunning ? "pause.fill" : "play.fill")
                                             )
                                             .font(.system(size: 20))
-                                            
                                             Text(
                                                 !hasStarted
                                                 ? "START"
@@ -160,14 +165,13 @@ struct RecordingPage: View {
                                             )
                                             .font(.custom("Special Gothic Expanded One", size: 13))
                                         }
-                                        .foregroundStyle(
-                                            sessionTimer.isRunning ? .yellow : .white
-                                        )
+                                        .foregroundStyle(sessionTimer.isRunning ? .yellow : .white)
                                     }
                                 }
                                 .scaleEffect(0.70)
                             }
                             .offset(x: 0, y: 80 + groupOffset)
+
                             if hasStarted && !sessionTimer.isRunning {
                                 Button(action: endSessionEarly) {
                                     Image("End")
@@ -245,8 +249,18 @@ struct RecordingPage: View {
             }
             .padding(.top, 60)
         }
+        // jailbreak: in-app "App unlocked" card that shrinks toward the island
+        .overlay {
+            #if os(iOS)
+            if let u = unlock {
+                BreakUnlockOverlay(appName: u.appName, onFinished: { unlock = nil })
+                    .id(u.id)
+            }
+            #endif
+        }
         .onAppear {
             sessionRecording.prepareCamera()
+            checkPendingEvents()
         }
         .onDisappear {
             if !sessionRecording.isExporting, !sessionRecording.isRecording {
@@ -262,6 +276,7 @@ struct RecordingPage: View {
                 if sessionRecording.isRecording || sessionRecording.isExporting {
                     ScreenWakeLock.setActive(true)
                 }
+                checkPendingEvents()   // jailbreak: pick up a break taken on the shield
             case .background, .inactive:
                 break
             @unknown default:
@@ -287,6 +302,75 @@ struct RecordingPage: View {
         .fullScreenCover(isPresented: $showCrashSession) {
             CrashSessionScreen(onFlowComplete: exitToHomeFromSessionFlow)
         }
+        // jailbreak: reason prompt when a break was taken on the shield
+        .fullScreenCover(item: $pendingPrompt) { prompt in
+            DistractionPromptScreen(
+                appName: prompt.distraction.appOpened.isEmpty ? "this app" : prompt.distraction.appOpened,
+                countToday: 1,
+                startAtReason: true,
+                onBackToSession: {
+                    modelContext.delete(prompt.distraction)
+                    try? modelContext.save()
+                    pendingPrompt = nil
+                },
+                onBreakWithReason: { reason in
+                    prompt.distraction.reason = reason
+                    prompt.distraction.reasonSubmitted = true
+                    #if os(iOS)
+                    focusController.grantBreak(for: prompt.distraction)
+                    let name = prompt.distraction.appDisplayName ?? prompt.distraction.appOpened
+                    unlock = UnlockInfo(appName: name.isEmpty ? "That app" : name)
+                    #endif
+                    try? modelContext.save()
+                    pendingPrompt = nil
+                }
+            )
+        }
+    }
+
+    // jailbreak: a break was taken on the shield → record it and prompt for a reason
+    private func checkPendingEvents() {
+        #if os(iOS)
+        guard pendingPrompt == nil else { return }
+        guard let pair = SharedJailbreakStore.nextUnhandledBreak() else { return }
+
+        let tokenData = pair.action.tokenData ?? pair.config?.tokenData
+        let displayName = pair.config?.displayName
+            ?? pair.action.displayName
+            ?? SharedJailbreakStore.lastShieldedAppName()
+            ?? ""
+        let bundleId = pair.config?.bundleId
+            ?? pair.action.bundleId
+            ?? SharedJailbreakStore.lastShieldedBundleId()
+
+        let distraction = Distraction(
+            sessionId: sessionId,
+            appOpened: displayName,
+            startTime: pair.config?.occurredAt ?? pair.action.occurredAt,
+            tokenData: tokenData,
+            appBundleId: bundleId,
+            appDisplayName: displayName.isEmpty ? nil : displayName,
+            sourceKind: "shieldAction",
+            actionTaken: "break"
+        )
+        modelContext.insert(distraction)
+        try? modelContext.save()
+
+        SharedJailbreakStore.markBreakHandled(pair.action.occurredAt)
+        pendingPrompt = PendingPrompt(distraction: distraction, tokenDataToClear: tokenData)
+        #endif
+    }
+
+    // stamp endTime on any break still open this session, so the distracted time is recorded
+    private func closeOpenDistractions() {
+        let sid = sessionId
+        let descriptor = FetchDescriptor<Distraction>(
+            predicate: #Predicate { $0.sessionId == sid }
+        )
+        if let all = try? modelContext.fetch(descriptor) {
+            for d in all where d.endTime == nil { d.endTime = .now }
+            try? modelContext.save()
+        }
     }
 
     private func exitToHomeFromSessionFlow() {
@@ -300,6 +384,10 @@ struct RecordingPage: View {
         sessionTimer.pause()
         sessionRecording.stopCamera()
         sessionRecording.resetForNewSession()
+        #if os(iOS)
+        closeOpenDistractions()
+        focusController.release()   // jailbreak: unblock everything when the session ends
+        #endif
         dismiss()
     }
 
@@ -324,18 +412,16 @@ struct RecordingPage: View {
 // MARK: - Camera Preview
 
 struct CameraPreview: UIViewRepresentable {
-    
+
     let session: AVCaptureSession
-    
+
     func makeUIView(context: Context) -> PreviewView {
-        
         let view = PreviewView()
         view.previewLayer.session = session
         view.previewLayer.videoGravity = .resizeAspectFill
-        
         return view
     }
-    
+
     func updateUIView(_ uiView: PreviewView, context: Context) {
     }
 }
@@ -344,21 +430,18 @@ struct CameraPreview: UIViewRepresentable {
 // MARK: - Preview UIView
 
 class PreviewView: UIView {
-    
+
     override class var layerClass: AnyClass {
         AVCaptureVideoPreviewLayer.self
     }
-    
+
     var previewLayer: AVCaptureVideoPreviewLayer {
         layer as! AVCaptureVideoPreviewLayer
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-
-        // Ensure preview layer fills the view
         previewLayer.frame = bounds
-
         if let connection = previewLayer.connection {
             VideoOrientationHelper.applyToCaptureConnection(connection)
         }
@@ -370,4 +453,6 @@ class PreviewView: UIView {
     RecordingPage()
         .environmentObject(SessionTimerViewModel())
         .environmentObject(SessionRecordingViewModel())
+        .environmentObject(FocusViewModel())
+        .modelContainer(for: [Session.self, Distraction.self], inMemory: true)
 }
