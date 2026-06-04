@@ -58,13 +58,11 @@ class ShieldActionExtension: ShieldActionDelegate {
         }
     }
 
-    // the flaky auto-open; the notification we already queued is the dependable backup.
+    // Auto-opening Parental Controls is only available on newer SDKs.
+    // Our current SDK doesn't define `.openParentalControlsApp`, so always close.
+    // When you adopt an SDK that includes it, you can restore the availability check.
     private func respond(_ completionHandler: @escaping (ShieldActionResponse) -> Void) {
-        if #available(iOS 26.5, *) {
-            completionHandler(.openParentalControlsApp)
-        } else {
-            completionHandler(.close)
-        }
+        completionHandler(.close)
     }
 
     override func handle(action: ShieldAction, for webDomain: WebDomainToken, completionHandler: @escaping (ShieldActionResponse) -> Void) {
@@ -125,3 +123,4 @@ class ShieldActionExtension: ShieldActionDelegate {
         UNUserNotificationCenter.current().add(request) { _ in then() }
     }
 }
+
