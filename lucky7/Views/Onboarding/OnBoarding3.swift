@@ -10,15 +10,23 @@ struct OnBoarding3: View {
     var onComplete: () -> Void = {}
 
     var body: some View {
-        OnboardingScreenTemplate(step: 3, onContinue: {
-            onComplete()
-        })
+        OnboardingScreenTemplate(
+            step: 3,
+            onContinue: onComplete,
+            onBack: goBack,
+            onGoPrevious: goBack
+        )
         .navigationBarBackButtonHidden()
+    }
+
+    private func goBack() {
+        guard !path.isEmpty else { return }
+        path.removeLast()
     }
 }
 
 #Preview {
     NavigationStack {
-        OnBoarding3(path: .constant([]))
+        OnBoarding3(path: .constant([2, 3]))
     }
 }

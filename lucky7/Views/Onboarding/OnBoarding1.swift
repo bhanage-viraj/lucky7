@@ -14,9 +14,11 @@ struct OnBoarding1: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            OnboardingScreenTemplate(step: 1, onContinue: {
-                path.append(2)
-            }) {
+            OnboardingScreenTemplate(
+                step: 1,
+                onContinue: { path.append(2) },
+                onGoNext: { path.append(2) }
+            ) {
                 mainContent
             }
             .navigationDestination(for: Int.self) { step in
