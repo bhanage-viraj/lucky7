@@ -5,9 +5,29 @@
 
 import SwiftUI
 
-struct OnboardingScreenTemplate: View {
+struct OnboardingScreenTemplate<Content: View>: View {
     let step: Int
-    var onContinue: () -> Void = {}
+    var onContinue: () -> Void
+    var onBack: (() -> Void)?
+    var onGoPrevious: (() -> Void)?
+    var onGoNext: (() -> Void)?
+    @ViewBuilder private var content: () -> Content
+
+    init(
+        step: Int,
+        onContinue: @escaping () -> Void = {},
+        onBack: (() -> Void)? = nil,
+        onGoPrevious: (() -> Void)? = nil,
+        onGoNext: (() -> Void)? = nil,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.step = step
+        self.onContinue = onContinue
+        self.onBack = onBack
+        self.onGoPrevious = onGoPrevious
+        self.onGoNext = onGoNext
+        self.content = content
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -26,7 +46,7 @@ struct OnboardingScreenTemplate: View {
                 .ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    progressIndicator
+                    progressHeader
                         .padding(.horizontal, 24)
                         .padding(.top, 16)
 
@@ -35,6 +55,12 @@ struct OnboardingScreenTemplate: View {
                     Image("OnboardingContainer")
                         .resizable()
                         .scaledToFit()
+                        .overlay {
+                            content()
+                                .padding(.horizontal, 28)
+                                .padding(.top, 36)
+                                .padding(.bottom, 28)
+                        }
                         .padding(.horizontal, 20)
 
                     Spacer(minLength: 20)
@@ -50,19 +76,73 @@ struct OnboardingScreenTemplate: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 20)
                 }
+
+                HStack(spacing: 0) {
+                    sideTapZone(action: onGoPrevious)
+                        .frame(width: sideTapWidth(for: geometry.size.width))
+
+                    Spacer()
+                        .allowsHitTesting(false)
+
+                    sideTapZone(action: onGoNext)
+                        .frame(width: sideTapWidth(for: geometry.size.width))
+                }
             }
         }
     }
 
-    private var progressIndicator: some View {
-        HStack(spacing: 8) {
-            ForEach(1...3, id: \.self) { index in
-                Capsule()
-                    .fill(Color.white.opacity(index == step ? 1 : 0.35))
-                    .frame(height: 5)
-                    .frame(maxWidth: .infinity)
+    private var progressHeader: some View {
+        HStack(spacing: 12) {
+            if let onBack {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+            }
+
+            HStack(spacing: 8) {
+                ForEach(1...3, id: \.self) { index in
+                    Capsule()
+                        .fill(Color.white.opacity(index <= step ? 1 : 0.35))
+                        .frame(height: 5)
+                        .frame(maxWidth: .infinity)
+                }
             }
         }
+    }
+
+    private func sideTapZone(action: (() -> Void)?) -> some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onTapGesture {
+                action?()
+            }
+            .allowsHitTesting(action != nil)
+    }
+
+    private func sideTapWidth(for totalWidth: CGFloat) -> CGFloat {
+        max(44, (totalWidth - 40) * 0.12)
+    }
+}
+
+extension OnboardingScreenTemplate where Content == EmptyView {
+    init(
+        step: Int,
+        onContinue: @escaping () -> Void = {},
+        onBack: (() -> Void)? = nil,
+        onGoPrevious: (() -> Void)? = nil,
+        onGoNext: (() -> Void)? = nil
+    ) {
+        self.init(
+            step: step,
+            onContinue: onContinue,
+            onBack: onBack,
+            onGoPrevious: onGoPrevious,
+            onGoNext: onGoNext,
+            content: { EmptyView() }
+        )
     }
 }
 
@@ -71,13 +151,13 @@ struct OnboardingScreenTemplate: View {
 }
 
 #Preview("Step 1") {
-    OnboardingScreenTemplate(step: 1)
+    OnboardingScreenTemplate(step: 1, onGoNext: {})
 }
 
 #Preview("Step 2") {
-    OnboardingScreenTemplate(step: 2)
+    OnboardingScreenTemplate(step: 2, onBack: {}, onGoPrevious: {}, onGoNext: {})
 }
 
 #Preview("Step 3") {
-    OnboardingScreenTemplate(step: 3)
+    OnboardingScreenTemplate(step: 3, onBack: {}, onGoPrevious: {})
 }
