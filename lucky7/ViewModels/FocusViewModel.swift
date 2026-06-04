@@ -142,6 +142,16 @@ final class FocusViewModel: ObservableObject {
         // opens the app themselves (that manual step is the friction we want).
         let appName = distraction.appDisplayName ?? distraction.appOpened
         startBreakActivity(appName: appName, until: until)
+        // Label(token) names the in-app card, but the island + the "one break at a
+        // time" warning + the break-ended notification need a plain string. Resolve it
+        // from the token (data-access) and backfill so they show the real name too.
+        if (distraction.appDisplayName ?? "").isEmpty {
+            Task { @MainActor in
+                guard let name = await resolveDisplayName(for: distraction), !name.isEmpty else { return }
+                distraction.appDisplayName = name
+                startBreakActivity(appName: name, until: until)   // updates the island in place
+            }
+        }
         isRunning = false   // they're distracted now — auto-pause the session
     }
 
@@ -184,7 +194,7 @@ final class FocusViewModel: ObservableObject {
 
     private func startBreakActivity(appName: String, until endsAt: Date) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        let name = appName.isEmpty ? "That app" : appName
+        let name = appName.isEmpty ? "Blocked App" : appName
         let state = BreakActivityAttributes.ContentState(
             startedAt: Date(),
             endsAt: endsAt,
@@ -274,6 +284,18 @@ final class FocusViewModel: ObservableObject {
         return distraction.appBundleId
     }
 
+    // the visible app name from the opaque token (data-access). Label(token) covers
+    // the in-app card, but the Dynamic Island, the "one break at a time" warning, and
+    // the break-ended notification all need a plain string — this backfills it.
+    private func resolveDisplayName(for distraction: Distraction) async -> String? {
+        guard let data = distraction.tokenData,
+              let token = try? JSONDecoder().decode(ApplicationToken.self, from: data),
+              let apps = try? await FamilyActivityData.shared.installedApplications,
+              let match = apps.first(where: { $0.token == token })
+        else { return nil }
+        return match.localizedDisplayName
+    }
+
     func remainingSeconds(for distraction: Distraction) -> TimeInterval {
         guard let until = distraction.breakGrantedUntil else { return 0 }
         return max(0, until.timeIntervalSince(now))
@@ -296,9 +318,15 @@ final class FocusViewModel: ObservableObject {
 
     private func applyShield() {
         let brokenTokens = Set(activeBreaks.compactMap { decodeToken($0.tokenData) })
+        // A break whose token we can't decode is a CATEGORY break: iOS gives no per-app
+        // token for a category, so we can't lift a single app out of it — we lift the
+        // WHOLE category for the break, then re-block when it ends. Individual-app breaks
+        // still lift surgically via brokenTokens above.
+        let hasCategoryBreak = activeBreaks.contains { decodeToken($0.tokenData) == nil }
+
         let effective = selection.applicationTokens.subtracting(brokenTokens)
         store.shield.applications = effective.isEmpty ? nil : effective
-        store.shield.applicationCategories = selection.categoryTokens.isEmpty
+        store.shield.applicationCategories = (selection.categoryTokens.isEmpty || hasCategoryBreak)
             ? nil
             : .specific(selection.categoryTokens)
         store.shield.webDomains = selection.webDomainTokens.isEmpty

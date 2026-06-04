@@ -31,6 +31,7 @@ struct RecordingPage: View {
     @State private var sessionId = UUID()
     @State private var pendingPrompt: PendingPrompt?
     @State private var unlock: UnlockInfo?
+    @State private var breakBlockedInfo: BreakBlockedInfo?
 
     struct PendingPrompt: Identifiable {
         let id = UUID()
@@ -44,6 +45,14 @@ struct RecordingPage: View {
         var appName: String = ""
         var tokenData: Data? = nil
         var timeText: String = ""
+    }
+
+    // shown instead of the reason form when a break is already running — only one
+    // app can be unlocked at a time, so a second "Break It" is rejected with a warning.
+    struct BreakBlockedInfo: Identifiable {
+        let id = UUID()
+        let appName: String
+        let timeLeft: String
     }
 
     var body: some View {
@@ -289,6 +298,15 @@ struct RecordingPage: View {
         } message: {
             Text("Rush Hour sends a quick notification to bring you back here when you tap “Break It” or “Back to Session” on the block screen. Tap that notification to return — without notifications on, it can fail.")
         }
+        .alert(
+            "One break at a time",
+            isPresented: Binding(get: { breakBlockedInfo != nil }, set: { if !$0 { breakBlockedInfo = nil } }),
+            presenting: breakBlockedInfo
+        ) { _ in
+            Button("Got it", role: .cancel) { breakBlockedInfo = nil }
+        } message: { info in
+            Text("\(info.appName) is still unlocked — \(info.timeLeft) left. Finish that break before you can unlock another app.")
+        }
         .onDisappear {
             if !sessionRecording.isExporting, !sessionRecording.isRecording {
                 ScreenWakeLock.release()
@@ -296,6 +314,12 @@ struct RecordingPage: View {
             if !sessionRecording.isExporting {
                 sessionRecording.stopCamera()
             }
+            #if os(iOS)
+            // Leaving the session screen (swipe-back / pop) ends the session — lift the
+            // shield. The normal end flow already calls release(); this covers the
+            // swipe-back path that otherwise left every app blocked.
+            if hasStarted { focusController.release() }
+            #endif
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -349,7 +373,7 @@ struct RecordingPage: View {
                     #if os(iOS)
                     focusController.grantBreak(for: prompt.distraction)
                     let name = prompt.distraction.appDisplayName ?? prompt.distraction.appOpened
-                    unlock = UnlockInfo(kind: .breakUnlock, appName: name.isEmpty ? "This app" : name, tokenData: prompt.distraction.tokenData, timeText: "15:00")
+                    unlock = UnlockInfo(kind: .breakUnlock, appName: name.isEmpty ? "Blocked App" : name, tokenData: prompt.distraction.tokenData, timeText: "15:00")
                     #endif
                     try? modelContext.save()
                     pendingPrompt = nil
@@ -361,8 +385,21 @@ struct RecordingPage: View {
     // jailbreak: a break was taken on the shield → record it and prompt for a reason
     private func checkPendingEvents() {
         #if os(iOS)
-        guard pendingPrompt == nil else { return }
+        guard pendingPrompt == nil, breakBlockedInfo == nil else { return }
         guard let pair = SharedJailbreakStore.nextUnhandledBreak() else { return }
+
+        // one break at a time: if an app is already unlocked, reject this new break —
+        // keep the active break running, warn the user, and skip the reason form.
+        if let active = focusController.activeBreaks.first(where: { focusController.remainingSeconds(for: $0) > 0 }) {
+            let name = active.appDisplayName ?? active.appOpened
+            let left = focusController.remainingSeconds(for: active)
+            breakBlockedInfo = BreakBlockedInfo(
+                appName: name.isEmpty ? "Blocked App" : name,
+                timeLeft: String(format: "%d:%02d", Int(left) / 60, Int(left) % 60)
+            )
+            SharedJailbreakStore.markBreakHandled(pair.action.occurredAt)   // consume so it won't re-prompt
+            return
+        }
 
         let tokenData = pair.action.tokenData ?? pair.config?.tokenData
         let displayName = pair.config?.displayName
