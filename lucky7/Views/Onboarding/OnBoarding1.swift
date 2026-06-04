@@ -14,8 +14,10 @@ struct OnBoarding1: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            OnboardingScreenTemplate(step: 1) {
+            OnboardingScreenTemplate(step: 1, onContinue: {
                 path.append(2)
+            }) {
+                mainContent
             }
             .navigationDestination(for: Int.self) { step in
                 switch step {
@@ -28,6 +30,40 @@ struct OnBoarding1: View {
                 }
             }
         }
+    }
+    
+    private var mainContent: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 0) {
+                Text("Twelve tabs.")
+                    .font(.custom("Special Gothic Expanded One", size: 35))
+                Text("Six deadlines.")
+                    .font(.custom("Special Gothic Expanded One", size: 35))
+                Text("One you.")
+                    .font(.custom("Special Gothic Expanded One", size: 35))
+                    .padding(.bottom, 10)
+
+                (
+                    Text("Everything feels urgent but nothing feels finished. You're stuck in ")
+                        .font(.system(size: 17))
+                    + Text("Rush Hour")
+                        .font(.system(size: 17, weight: .bold))
+                        .italic()
+                )
+                .multilineTextAlignment(.center)
+            }
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+
+            Image("group206")
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .layoutPriority(1)
+                .padding(.horizontal, 4)
+                .padding(.bottom, 4)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 

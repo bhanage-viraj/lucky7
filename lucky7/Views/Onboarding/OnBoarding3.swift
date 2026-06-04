@@ -10,9 +10,9 @@ struct OnBoarding3: View {
     var onComplete: () -> Void = {}
 
     var body: some View {
-        OnboardingScreenTemplate(step: 3) {
+        OnboardingScreenTemplate(step: 3, onContinue: {
             onComplete()
-        }
+        })
         .navigationBarBackButtonHidden()
     }
 }

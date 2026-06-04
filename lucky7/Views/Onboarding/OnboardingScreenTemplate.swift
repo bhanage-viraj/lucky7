@@ -5,9 +5,20 @@
 
 import SwiftUI
 
-struct OnboardingScreenTemplate: View {
+struct OnboardingScreenTemplate<Content: View>: View {
     let step: Int
-    var onContinue: () -> Void = {}
+    var onContinue: () -> Void
+    @ViewBuilder private var content: () -> Content
+
+    init(
+        step: Int,
+        onContinue: @escaping () -> Void = {},
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.step = step
+        self.onContinue = onContinue
+        self.content = content
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -35,6 +46,12 @@ struct OnboardingScreenTemplate: View {
                     Image("OnboardingContainer")
                         .resizable()
                         .scaledToFit()
+                        .overlay {
+                            content()
+                                .padding(.horizontal, 28)
+                                .padding(.top, 36)
+                                .padding(.bottom, 28)
+                        }
                         .padding(.horizontal, 20)
 
                     Spacer(minLength: 20)
@@ -63,6 +80,12 @@ struct OnboardingScreenTemplate: View {
                     .frame(maxWidth: .infinity)
             }
         }
+    }
+}
+
+extension OnboardingScreenTemplate where Content == EmptyView {
+    init(step: Int, onContinue: @escaping () -> Void = {}) {
+        self.init(step: step, onContinue: onContinue, content: { EmptyView() })
     }
 }
 
