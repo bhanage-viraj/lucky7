@@ -6,6 +6,8 @@
 import SwiftUI
 import SwiftData
 import AVFoundation
+import UserNotifications
+import Combine
 
 // MARK: - Main View
 
@@ -14,6 +16,7 @@ struct RecordingPage: View {
     @State private var groupOffset: CGFloat = 0
     @State private var showFullFocusScreen = false
     @State private var showCrashSession = false
+    @State private var showNotifNudge = false
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -37,7 +40,10 @@ struct RecordingPage: View {
 
     struct UnlockInfo: Identifiable {
         let id = UUID()
-        let appName: String
+        let kind: BreakUnlockOverlay.Kind
+        var appName: String = ""
+        var tokenData: Data? = nil
+        var timeText: String = ""
     }
 
     var body: some View {
@@ -253,7 +259,7 @@ struct RecordingPage: View {
         .overlay {
             #if os(iOS)
             if let u = unlock {
-                BreakUnlockOverlay(appName: u.appName, onFinished: { unlock = nil })
+                BreakUnlockOverlay(kind: u.kind, appName: u.appName, tokenData: u.tokenData, timeText: u.timeText, onFinished: { unlock = nil })
                     .id(u.id)
             }
             #endif
@@ -261,6 +267,27 @@ struct RecordingPage: View {
         .onAppear {
             sessionRecording.prepareCamera()
             checkPendingEvents()
+            // The shield return relies on a tappable notification. Request it HERE (a stable
+            // screen) — the splash-time request gets cancelled before the user can respond,
+            // leaving the app unregistered (not even listed in Settings → Notifications). Then
+            // nudge to Settings if it's been denied.
+            Task {
+                await NotificationPermission.requestIfNeeded()
+                if await NotificationPermission.isDenied() { showNotifNudge = true }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .shieldReturnTapped)) { _ in
+            checkPendingEvents()   // shield-return notification received/tapped → surface the prompt
+        }
+        .alert("Turn on notifications", isPresented: $showNotifNudge) {
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            Button("Not now", role: .cancel) { }
+        } message: {
+            Text("Rush Hour sends a quick notification to bring you back here when you tap “Break It” or “Back to Session” on the block screen. Tap that notification to return — without notifications on, it can fail.")
         }
         .onDisappear {
             if !sessionRecording.isExporting, !sessionRecording.isRecording {
@@ -277,6 +304,9 @@ struct RecordingPage: View {
                     ScreenWakeLock.setActive(true)
                 }
                 checkPendingEvents()   // jailbreak: pick up a break taken on the shield
+                cancelShieldFallbackNotifications()   // clear delivered shield notifications
+                // notifications ARE the return path now — re-nudge if they got denied mid-session
+                Task { if await NotificationPermission.isDenied() { showNotifNudge = true } }
             case .background, .inactive:
                 break
             @unknown default:
@@ -319,7 +349,7 @@ struct RecordingPage: View {
                     #if os(iOS)
                     focusController.grantBreak(for: prompt.distraction)
                     let name = prompt.distraction.appDisplayName ?? prompt.distraction.appOpened
-                    unlock = UnlockInfo(appName: name.isEmpty ? "That app" : name)
+                    unlock = UnlockInfo(kind: .breakUnlock, appName: name.isEmpty ? "This app" : name, tokenData: prompt.distraction.tokenData, timeText: "15:00")
                     #endif
                     try? modelContext.save()
                     pendingPrompt = nil
@@ -359,6 +389,15 @@ struct RecordingPage: View {
         SharedJailbreakStore.markBreakHandled(pair.action.occurredAt)
         pendingPrompt = PendingPrompt(distraction: distraction, tokenDataToClear: tokenData)
         #endif
+    }
+
+    // .openParentalControlsApp is the primary shield→app return; the shield also queued
+    // a delayed notification as a fallback. We're back in the app now, so drop it.
+    private func cancelShieldFallbackNotifications() {
+        // Only clear DELIVERED ones — leave any pending request to fire, since pending means the
+        // app hasn't genuinely returned yet (don't kill the safety net on a transient .active).
+        let ids = ["rushhour.shieldreturn", "rushhour.shieldreason"]
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ids)
     }
 
     // stamp endTime on any break still open this session, so the distracted time is recorded

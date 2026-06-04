@@ -7,9 +7,11 @@
 
 import SwiftUI
 import SwiftData
+import UserNotifications
 
 @main
 struct lucky7App: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var focusController = FocusViewModel()
     @StateObject private var sessionTimer = SessionTimerViewModel()
     @StateObject private var sessionRecording = SessionRecordingViewModel()
@@ -25,5 +27,46 @@ struct lucky7App: App {
                 }
         }
         .modelContainer(for: [Session.self, Distraction.self])
+    }
+}
+
+extension Notification.Name {
+    /// Posted when the shield-return notification is received/tapped, so the active screen
+    /// re-checks for a pending break even if scenePhase is already .active.
+    static let shieldReturnTapped = Notification.Name("rushhour.shieldReturnTapped")
+}
+
+// Registers as the notification delegate so the shield-return notification is an actual return
+// path: it shows even in the foreground, and receiving/tapping it drives the pending-break check.
+// Without this, tapping the fallback notification did nothing meaningful — the whole reason the
+// shield buttons "didn't redirect."
+final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+
+    // Foreground delivery — show the banner AND drive the return.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        // App is already in the foreground — drive the return silently; no stray banner.
+        NotificationCenter.default.post(name: .shieldReturnTapped, object: nil)
+        completionHandler([])
+    }
+
+    // Tap — bring the user back and drive the return.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        NotificationCenter.default.post(name: .shieldReturnTapped, object: nil)
+        completionHandler()
     }
 }

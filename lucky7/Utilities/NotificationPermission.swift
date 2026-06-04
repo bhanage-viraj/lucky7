@@ -16,4 +16,11 @@ enum NotificationPermission {
         guard settings.authorizationStatus == .notDetermined else { return }
         _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge, .timeSensitive])
     }
+
+    // The shield → app return relies on a notification fallback, so the block
+    // feature needs this granted. True when the user has DENIED it — iOS won't
+    // re-show the prompt, so the app must nudge them to Settings.
+    static func isDenied() async -> Bool {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .denied
+    }
 }

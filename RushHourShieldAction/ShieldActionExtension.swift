@@ -41,24 +41,44 @@ class ShieldActionExtension: ShieldActionDelegate {
         try? data.write(to: url, options: .atomic)
     }
 
+    // App handler — we have the real ApplicationToken (drives the "<App> unlocked" card via Label(token)).
     override func handle(action: ShieldAction, for application: ApplicationToken, completionHandler: @escaping (ShieldActionResponse) -> Void) {
+        let tokenData = try? JSONEncoder().encode(application)
+        handleAction(action, tokenData: tokenData, completionHandler: completionHandler)
+    }
+
+    // Category handler — fires when the user blocked a whole CATEGORY (the common case here). No app token,
+    // but the SAME return logic must run or the buttons do nothing. The app falls back to the shielded-app
+    // name the config extension stashed (lastShieldedAppName) for the card/prompt.
+    override func handle(action: ShieldAction, for category: ActivityCategoryToken, completionHandler: @escaping (ShieldActionResponse) -> Void) {
+        handleAction(action, tokenData: nil, completionHandler: completionHandler)
+    }
+
+    // Web-domain handler — same: run the return logic, no token.
+    override func handle(action: ShieldAction, for webDomain: WebDomainToken, completionHandler: @escaping (ShieldActionResponse) -> Void) {
+        handleAction(action, tokenData: nil, completionHandler: completionHandler)
+    }
+
+    // Shared return logic for app / category / web-domain shields.
+    // .openParentalControlsApp (iOS 26.5) is a best-effort auto-open (no-op on iOS 26 per FB18997699);
+    // the notification the user taps is the reliable return. Schedule it durably (addAndWait blocks until
+    // the daemon accepts it), THEN deliver the response synchronously on this call stack.
+    private func handleAction(_ action: ShieldAction, tokenData: Data?, completionHandler: @escaping (ShieldActionResponse) -> Void) {
         switch action {
-        // .openParentalControlsApp (iOS 26.5) is the auto-open, but it's unreliable
-        // (undocumented/buggy per Apple's own forums), so we ALSO queue a notification
-        // as the dependable fallback the user taps. Schedule it FIRST (the async add can
-        // be killed when this short-lived extension exits), THEN return the response.
         case .primaryButtonPressed:
-            recordAction(token: application, action: "back")
-            scheduleReturnNotification { self.respond(completionHandler) }
+            recordAction(tokenData: tokenData, action: "back")
+            scheduleReturnNotification()
+            respond(completionHandler)
         case .secondaryButtonPressed:
-            recordAction(token: application, action: "break")
-            scheduleReasonPromptNotification(token: application) { self.respond(completionHandler) }
+            recordAction(tokenData: tokenData, action: "break")
+            scheduleReasonPromptNotification()
+            respond(completionHandler)
         @unknown default:
             completionHandler(.close)
         }
     }
 
-    // the flaky auto-open; the notification we already queued is the dependable backup.
+    // best-effort auto-open (no-op on iOS 26 per FB18997699); the tapped notification is the dependable return.
     private func respond(_ completionHandler: @escaping (ShieldActionResponse) -> Void) {
         if #available(iOS 26.5, *) {
             completionHandler(.openParentalControlsApp)
@@ -67,20 +87,11 @@ class ShieldActionExtension: ShieldActionDelegate {
         }
     }
 
-    override func handle(action: ShieldAction, for webDomain: WebDomainToken, completionHandler: @escaping (ShieldActionResponse) -> Void) {
-        completionHandler(.close)
-    }
-
-    override func handle(action: ShieldAction, for category: ActivityCategoryToken, completionHandler: @escaping (ShieldActionResponse) -> Void) {
-        completionHandler(.close)
-    }
-
-    private func recordAction(token: ApplicationToken, action: String) {
+    private func recordAction(tokenData: Data?, action: String) {
         var events = loadEvents()
-        let tokenData = (try? JSONEncoder().encode(token)) ?? Data()
         let event: [String: Any] = [
             "id": UUID().uuidString,
-            "tokenData": tokenData.base64EncodedString(),
+            "tokenData": (tokenData ?? Data()).base64EncodedString(),
             "occurredAt": Date().timeIntervalSince1970,
             "sourceKind": "shieldAction",
             "actionTaken": action
@@ -89,39 +100,36 @@ class ShieldActionExtension: ShieldActionDelegate {
         saveEvents(events)
     }
 
-    private func scheduleReasonPromptNotification(token: ApplicationToken, then: @escaping () -> Void) {
+    private func scheduleReasonPromptNotification() {
         let content = UNMutableNotificationContent()
         content.title = "Tap to record your reason"
         content.body = "Come back to Rush Hour to log why you opened that app."
         content.sound = .default
         content.interruptionLevel = .timeSensitive
-        let tokenData = (try? JSONEncoder().encode(token)) ?? Data()
-        content.userInfo = [
-            "type": "jailbreakReason",
-            "tokenData": tokenData.base64EncodedString()
-        ]
-
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.3, repeats: false)
-        let request = UNNotificationRequest(
-            identifier: "rushhour.jailbreak.\(UUID().uuidString)",
-            content: content,
-            trigger: trigger
-        )
-        UNUserNotificationCenter.current().add(request) { _ in then() }
+        content.userInfo = ["type": "jailbreakReason"]
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.5, repeats: false)
+        let request = UNNotificationRequest(identifier: "rushhour.shieldreason", content: content, trigger: trigger)
+        addAndWait(request)
     }
 
-    private func scheduleReturnNotification(then: @escaping () -> Void) {
+    private func scheduleReturnNotification() {
         let content = UNMutableNotificationContent()
         content.title = "Back to Rush Hour"
         content.body = "Tap to return to your focus session."
         content.sound = .default
         content.interruptionLevel = .timeSensitive
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.3, repeats: false)
-        let request = UNNotificationRequest(
-            identifier: "rushhour.return.\(UUID().uuidString)",
-            content: content,
-            trigger: trigger
-        )
-        UNUserNotificationCenter.current().add(request) { _ in then() }
+        content.userInfo = ["type": "jailbreakReturn"]
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.5, repeats: false)
+        let request = UNNotificationRequest(identifier: "rushhour.shieldreturn", content: content, trigger: trigger)
+        addAndWait(request)
+    }
+
+    // Block until the notification is actually persisted, so this short-lived extension isn't
+    // torn down mid-schedule. The 1s timeout is a safety net; the add normally completes in ms.
+    private func addAndWait(_ request: UNNotificationRequest) {
+        let group = DispatchGroup()
+        group.enter()
+        UNUserNotificationCenter.current().add(request) { _ in group.leave() }
+        _ = group.wait(timeout: .now() + 1.0)
     }
 }
