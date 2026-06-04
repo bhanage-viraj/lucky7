@@ -7,6 +7,7 @@ import SwiftUI
 
 struct OnboardingScreenTemplate: View {
     let step: Int
+    var onContinue: () -> Void = {}
 
     var body: some View {
         GeometryReader { geometry in
@@ -16,12 +17,11 @@ struct OnboardingScreenTemplate: View {
 
                 VStack(spacing: 0) {
                     Spacer()
-                    Image("frame219")
+                    Image("PatternBackground")
                         .resizable()
                         .scaledToFill()
-                        .frame(width: geometry.size.width, height: geometry.size.height * 0.55)
-                        .clipped()
-                        
+                        .ignoresSafeArea()
+                        .offset(y: 400)
                 }
                 .ignoresSafeArea()
 
@@ -32,20 +32,23 @@ struct OnboardingScreenTemplate: View {
 
                     Spacer(minLength: 20)
 
-                    Image("frame218")
+                    Image("OnboardingContainer")
                         .resizable()
                         .scaledToFit()
                         .padding(.horizontal, 20)
-                        
 
                     Spacer(minLength: 20)
-                    
 
-                    Text("Tap to continue")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.white)
-                        
-                    
+                    Button(action: onContinue) {
+                        Text("CONTINUE")
+                            .font(.system(size: 16, weight: .heavy))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 20)
+                            .background(Capsule().fill(Color.black))
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 20)
                 }
             }
         }
@@ -61,6 +64,10 @@ struct OnboardingScreenTemplate: View {
             }
         }
     }
+}
+
+#Preview("Flow") {
+    OnBoarding1()
 }
 
 #Preview("Step 1") {

@@ -6,11 +6,18 @@
 import SwiftUI
 
 struct OnBoarding2: View {
+    @Binding var path: [Int]
+
     var body: some View {
-        OnboardingScreenTemplate(step: 2)
+        OnboardingScreenTemplate(step: 2) {
+            path.append(3)
+        }
+        .navigationBarBackButtonHidden()
     }
 }
 
 #Preview {
-    OnBoarding2()
+    NavigationStack {
+        OnBoarding2(path: .constant([]))
+    }
 }
