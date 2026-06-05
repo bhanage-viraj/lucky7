@@ -27,24 +27,6 @@ final class FocusViewModel: ObservableObject {
     static let breakDuration: TimeInterval = 15 * 60
     static let appGroupId = "group.com.andrianangg.Traffic-Man"
     static let selectionDefaultsKey = "savedFamilyActivitySelection"
-    // we can't read an app's URL scheme from its opaque token, so map the bundle
-    // ids the shield-config extension reports to known schemes
-    static let schemeByBundleId: [String: String] = [
-        "com.burbn.instagram": "instagram://app",
-        "com.google.ios.youtube": "youtube://",
-        "com.zhiliaoapp.musically": "snssdk1233://",   // TikTok
-        "com.atebits.Tweetie2": "twitter://",          // X / Twitter
-        "com.facebook.Facebook": "fb://",
-        "com.toyopagroup.picaboo": "snapchat://",
-        "net.whatsapp.WhatsApp": "whatsapp://",
-        "com.reddit.Reddit": "reddit://",
-        "com.spotify.client": "spotify://",
-        "jp.naver.line": "line://",                    // LINE
-        "ph.telegra.Telegraph": "tg://",               // Telegram
-        "com.hammerandchisel.discord": "discord://",
-        "com.netflix.Netflix": "nflx://",
-        "com.linkedin.LinkedIn": "linkedin://"      // LinkedIn
-    ]
 
     private let store = ManagedSettingsStore(named: .rushHourFocus)
     private var tickTimer: Timer?
@@ -233,59 +215,6 @@ final class FocusViewModel: ObservableObject {
             }
             UIApplication.shared.endBackgroundTask(bgTask)
         }
-    }
-
-    // scheme for a bundle id. table wins — it covers apps whose scheme is an
-    // abbreviation (fb://, nflx://, tg://) or whose bundle id is an internal
-    // codename (com.zhiliaoapp.musically = TikTok). for anything not listed, guess
-    // from the last dot-component lowercased — works when brand == suffix == scheme
-    // (com.linkedin.LinkedIn → linkedin://). guess can be wrong, but the app's
-    // already unblocked so worst case is just no auto-bounce.
-    private func scheme(for bundleId: String) -> String? {
-        if let known = Self.schemeByBundleId[bundleId] { return known }
-        guard let last = bundleId.split(separator: ".").last else { return nil }
-        return "\(last.lowercased())://"
-    }
-
-    // exposed for the in-app "Test redirect" button — runs the exact same resolve
-    // path as on-submit, opens the app, and returns what it did so the Stats
-    // screen can show why it worked (or which step failed) without the shield flow.
-    func redirectDiagnostic(for distraction: Distraction) async -> String {
-        guard let bundleId = await resolveBundleId(for: distraction) else {
-            return "couldn't resolve a bundle id (no data access?)"
-        }
-        let mapped = Self.schemeByBundleId[bundleId] != nil
-        guard let scheme = scheme(for: bundleId), let url = URL(string: scheme) else {
-            return "resolved \(bundleId) but couldn't form a scheme"
-        }
-        UIApplication.shared.open(url, options: [:], completionHandler: nil)
-        return "opening \(bundleId) → \(scheme)\(mapped ? "" : " (guessed)")"
-    }
-
-    // open the specific app they broke. resolve its bundle id from the opaque
-    // token via the data-access API, map to a scheme, and open it.
-    private func routeBackToBlockedApp(for distraction: Distraction) {
-        Task { @MainActor in
-            guard let bundleId = await resolveBundleId(for: distraction),
-                  let scheme = scheme(for: bundleId),
-                  let url = URL(string: scheme) else { return }
-            try? await Task.sleep(nanoseconds: 500_000_000)   // let the shield lift first
-            UIApplication.shared.open(url, options: [:], completionHandler: nil)
-        }
-    }
-
-    // recover the blocked app's bundle id from its opaque token by matching it
-    // against the installed-apps list — only readable when authorization is
-    // .approvedWithDataAccess. Falls back to any bundle id we already stored.
-    private func resolveBundleId(for distraction: Distraction) async -> String? {
-        if let data = distraction.tokenData,
-           let token = try? JSONDecoder().decode(ApplicationToken.self, from: data),
-           let apps = try? await FamilyActivityData.shared.installedApplications,
-           let match = apps.first(where: { $0.token == token }),
-           let bid = match.bundleIdentifier {
-            return bid
-        }
-        return distraction.appBundleId
     }
 
     // the visible app name from the opaque token (data-access). Label(token) covers

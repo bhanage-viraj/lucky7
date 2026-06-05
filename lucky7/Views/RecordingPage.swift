@@ -322,10 +322,13 @@ struct RecordingPage: View {
                 sessionRecording.stopCamera()
             }
             #if os(iOS)
-            // Leaving the session screen (swipe-back / pop) ends the session — lift the
-            // shield. The normal end flow already calls release(); this covers the
-            // swipe-back path that otherwise left every app blocked.
-            if hasStarted { focusController.release() }
+            // Leaving the session screen (swipe-back / pop) ends the session — stop the timer
+            // AND lift the shield. The normal end flow already does both; this covers the
+            // swipe-back path that otherwise left the timer ticking + every app blocked.
+            if hasStarted {
+                sessionTimer.pause()
+                focusController.release()
+            }
             #endif
         }
         .onChange(of: scenePhase) { _, phase in
