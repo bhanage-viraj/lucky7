@@ -78,13 +78,10 @@ class ShieldActionExtension: ShieldActionDelegate {
         }
     }
 
-    // best-effort auto-open (no-op on iOS 26 per FB18997699); the tapped notification is the dependable return.
+    // just close — the tapped notification is the real way back to Rush Hour
+    // (.openParentalControlsApp is a no-op on iOS 26, FB18997699, so no point trying it).
     private func respond(_ completionHandler: @escaping (ShieldActionResponse) -> Void) {
-        if #available(iOS 26.5, *) {
-            completionHandler(.openParentalControlsApp)
-        } else {
-            completionHandler(.close)
-        }
+        completionHandler(.close)
     }
 
     private func recordAction(tokenData: Data?, action: String) {
@@ -133,3 +130,4 @@ class ShieldActionExtension: ShieldActionDelegate {
         _ = group.wait(timeout: .now() + 1.0)
     }
 }
+
