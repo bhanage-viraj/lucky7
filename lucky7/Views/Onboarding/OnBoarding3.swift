@@ -12,11 +12,18 @@ struct OnBoarding3: View {
     var body: some View {
         OnboardingScreenTemplate(
             step: 3,
-            buttonText: "CHOOSE APPS"
+            buttonText: "CHOOSE APPS",
+            onBack: goBack,
+            onGoPrevious: goBack
         ) {
             mainContent
         }
         .navigationBarBackButtonHidden()
+    }
+    
+    private func goBack() {
+        guard !path.isEmpty else { return }
+        path.removeLast()
     }
     
     private var mainContent: some View {
