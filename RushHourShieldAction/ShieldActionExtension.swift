@@ -78,10 +78,14 @@ class ShieldActionExtension: ShieldActionDelegate {
         }
     }
 
-    // just close — the tapped notification is the real way back to Rush Hour
-    // (.openParentalControlsApp is a no-op on iOS 26, FB18997699, so no point trying it).
+    // .openParentalControlsApp auto-opens Rush Hour on 26.5 — that's the instant redirect back.
+    // (the tapped notification stays as the fallback if it ever no-ops.)
     private func respond(_ completionHandler: @escaping (ShieldActionResponse) -> Void) {
-        completionHandler(.close)
+        if #available(iOS 26.5, *) {
+            completionHandler(.openParentalControlsApp)
+        } else {
+            completionHandler(.close)
+        }
     }
 
     private func recordAction(tokenData: Data?, action: String) {
