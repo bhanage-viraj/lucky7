@@ -38,11 +38,11 @@ struct OnBoarding1: View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
                 Text("Twelve tabs.")
-                    .font(.custom("Special Gothic Expanded One", size: 35))
+                    .font(.custom("Special Gothic Expanded One", size: 28))
                 Text("Six deadlines.")
-                    .font(.custom("Special Gothic Expanded One", size: 35))
+                    .font(.custom("Special Gothic Expanded One", size: 28))
                 Text("One you.")
-                    .font(.custom("Special Gothic Expanded One", size: 35))
+                    .font(.custom("Special Gothic Expanded One", size: 28))
                     .padding(.bottom, 10)
 
                 (

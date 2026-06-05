@@ -60,6 +60,6 @@ struct OnBoarding3: View {
 
 #Preview {
     NavigationStack {
-        OnBoarding3(path: .constant([]))
+        OnBoarding3(path: .constant([2, 3]))
     }
 }
