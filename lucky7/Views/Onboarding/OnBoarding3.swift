@@ -11,7 +11,8 @@ struct OnBoarding3: View {
 
     var body: some View {
         OnboardingScreenTemplate(
-            step: 3
+            step: 3,
+            buttonText: "CHOOSE APPS"
         ) {
             mainContent
         }

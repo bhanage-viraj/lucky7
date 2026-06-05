@@ -7,6 +7,7 @@ import SwiftUI
 
 struct OnboardingScreenTemplate<Content: View>: View {
     let step: Int
+    let buttonText: String?
     var onContinue: () -> Void
     var onBack: (() -> Void)?
     var onGoPrevious: (() -> Void)?
@@ -15,6 +16,7 @@ struct OnboardingScreenTemplate<Content: View>: View {
 
     init(
         step: Int,
+        buttonText: String? = nil,
         onContinue: @escaping () -> Void = {},
         onBack: (() -> Void)? = nil,
         onGoPrevious: (() -> Void)? = nil,
@@ -22,13 +24,27 @@ struct OnboardingScreenTemplate<Content: View>: View {
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.step = step
+        self.buttonText = buttonText
         self.onContinue = onContinue
         self.onBack = onBack
         self.onGoPrevious = onGoPrevious
         self.onGoNext = onGoNext
         self.content = content
     }
+    
+    @State private var animated = false
+    @State private var maskWidth: CGFloat = 0
+    @State private var containerWidth: CGFloat = 0
 
+    private func animate() {
+        maskWidth = 0
+        withAnimation(.easeInOut(duration: 1.3)) {
+            maskWidth = containerWidth
+        }
+    }
+    
+    @State private var visible = false
+    
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -66,7 +82,7 @@ struct OnboardingScreenTemplate<Content: View>: View {
                     Spacer(minLength: 20)
 
                     Button(action: onContinue) {
-                        Text("CONTINUE")
+                        Text(buttonText ?? "CONTINUE")
                             .font(.system(size: 16, weight: .heavy))
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
@@ -102,12 +118,42 @@ struct OnboardingScreenTemplate<Content: View>: View {
                 .buttonStyle(.plain)
             }
 
-            HStack(spacing: 8) {
-                ForEach(1...3, id: \.self) { index in
-                    Capsule()
-                        .fill(Color.white.opacity(index <= step ? 1 : 0.35))
-                        .frame(height: 5)
-                        .frame(maxWidth: .infinity)
+            ZStack{
+                HStack(spacing: 8) {
+                    ForEach(1...3, id: \.self) { index in
+                        Capsule()
+                            .fill(Color.white.opacity(index <= step-1 ? 1 : 0.35))
+                            .frame(height: 5)
+                            .frame(maxWidth: .infinity)
+                            .task {
+                                try? await Task.sleep(for: .seconds(1.5))
+                                withAnimation {
+                                            visible = true
+                                        }
+                            }
+                            
+                    }
+                }
+                HStack(spacing: 8) {
+                    ForEach(1...3, id: \.self) { index in
+                        Capsule()
+                            .fill(index <= step ? Color.white : Color.clear)
+                            .frame(height: 5)
+                            .frame(maxWidth: .infinity)
+                            .mask(alignment: .leading) {
+                                Rectangle()
+                                    .frame(width: maskWidth)
+                            }
+                            .background(
+                                GeometryReader { geo in
+                                    Color.clear
+                                        .onAppear {
+                                            containerWidth = 120
+                                            animate()
+                                        }
+                                }
+                            )
+                    }
                 }
             }
         }
@@ -130,6 +176,7 @@ struct OnboardingScreenTemplate<Content: View>: View {
 extension OnboardingScreenTemplate where Content == EmptyView {
     init(
         step: Int,
+        buttonText: String? = nil,
         onContinue: @escaping () -> Void = {},
         onBack: (() -> Void)? = nil,
         onGoPrevious: (() -> Void)? = nil,
@@ -137,6 +184,7 @@ extension OnboardingScreenTemplate where Content == EmptyView {
     ) {
         self.init(
             step: step,
+            buttonText: buttonText,
             onContinue: onContinue,
             onBack: onBack,
             onGoPrevious: onGoPrevious,
