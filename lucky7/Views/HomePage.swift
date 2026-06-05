@@ -58,7 +58,7 @@ struct HomePage: View {
                             Button {
                                 sessionTimer.configure(hours: selectedHours, minutes: selectedMinutes)
                                 showRecordingPage = true
-                            } label: {
+                            } label: { 
                                 
                                 VStack(spacing: 4) {
                                     

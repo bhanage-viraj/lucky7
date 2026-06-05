@@ -159,10 +159,14 @@ struct RecordingPage: View {
                                                 sessionRecording.pauseRecording()
                                                 groupOffset = 0
                                             } else {
-                                                // RESUME recording
+                                                // RESUME recording — and end any active break so the
+                                                // unlocked app re-blocks when you go back to focusing
                                                 sessionTimer.start()
                                                 sessionRecording.resumeRecording()
                                                 groupOffset = 70
+                                                #if os(iOS)
+                                                focusController.resume()
+                                                #endif
                                             }
                                         }
                                     }) {
@@ -264,6 +268,9 @@ struct RecordingPage: View {
             }
             .padding(.top, 60)
         }
+        #if os(iOS)
+        .toolbar(.hidden, for: .tabBar)   // recording is a full-screen mode — keep the tab bar on the home page only
+        #endif
         // jailbreak: in-app "App unlocked" card that shrinks toward the island
         .overlay {
             #if os(iOS)
@@ -331,7 +338,15 @@ struct RecordingPage: View {
                 cancelShieldFallbackNotifications()   // clear delivered shield notifications
                 // notifications ARE the return path now — re-nudge if they got denied mid-session
                 Task { if await NotificationPermission.isDenied() { showNotifNudge = true } }
-            case .background, .inactive:
+            case .background:
+                // left the app → pause the session instead of letting it silently freeze and
+                // auto-resume; the button flips to RESUME so you pick back up deliberately
+                if hasStarted && sessionTimer.isRunning {
+                    sessionTimer.pause()
+                    sessionRecording.pauseRecording()
+                    groupOffset = 0
+                }
+            case .inactive:
                 break
             @unknown default:
                 break
@@ -340,6 +355,9 @@ struct RecordingPage: View {
         .onChange(of: sessionTimer.showFinishSession) { _, show in
             if show {
                 finalizeRecording()
+                #if os(iOS)
+                focusController.release()   // timer hit 00:00 — lift the shield + tear down the break Live Activity now, not after the recap
+                #endif
             }
         }
         .onChange(of: sessionTimer.requestReturnToHome) { _, shouldReturn in
@@ -422,6 +440,10 @@ struct RecordingPage: View {
         )
         modelContext.insert(distraction)
         try? modelContext.save()
+
+        // resolve the real app name now, while foregrounded on the reason screen, so it's ready
+        // before the Live Activity starts (otherwise the async lookup is cut off when you leave)
+        focusController.prefetchDisplayName(for: distraction)
 
         SharedJailbreakStore.markBreakHandled(pair.action.occurredAt)
         pendingPrompt = PendingPrompt(distraction: distraction, tokenDataToClear: tokenData)
