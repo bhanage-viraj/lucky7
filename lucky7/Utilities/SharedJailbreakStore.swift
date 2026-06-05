@@ -144,6 +144,11 @@ enum SharedJailbreakStore {
             defaults.removeObject(forKey: "lastShieldedAppName")
             defaults.removeObject(forKey: "lastShieldedBundleId")
             defaults.removeObject(forKey: "configTick")
+            // The shield-config ext can't see our deletions (its own cfprefs cache masks
+            // them), but it CAN read a key only WE write. Stamp the session start; the ext
+            // compares it to its own last-seen stamp and resets its count itself.
+            defaults.set(Date().timeIntervalSince1970, forKey: "sessionStartedAt")
+            CFPreferencesAppSynchronize(appGroupId as CFString)   // flush so the shield ext reads the new stamp
         }
         let session: [String: Any] = ["startedAt": Date().timeIntervalSince1970]
         if let url = sessionFileURL, let data = try? JSONSerialization.data(withJSONObject: session) {

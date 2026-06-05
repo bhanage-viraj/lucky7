@@ -10,7 +10,7 @@ import SwiftUI
 import WidgetKit
 
 struct RushHourWidgetControl: ControlWidget {
-    static let kind: String = "com.andrianangg.Traffic-Man.RushHourWidget"
+    static let kind: String = "com.andrianangg.Rush-Hour.RushHourWidget"
 
     var body: some ControlWidgetConfiguration {
         AppIntentControlConfiguration(
