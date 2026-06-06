@@ -27,24 +27,6 @@ final class FocusViewModel: ObservableObject {
     static let breakDuration: TimeInterval = 15 * 60
     static let appGroupId = "group.com.andrianangg.Traffic-Man"
     static let selectionDefaultsKey = "savedFamilyActivitySelection"
-    // we can't read an app's URL scheme from its opaque token, so map the bundle
-    // ids the shield-config extension reports to known schemes
-    static let schemeByBundleId: [String: String] = [
-        "com.burbn.instagram": "instagram://app",
-        "com.google.ios.youtube": "youtube://",
-        "com.zhiliaoapp.musically": "snssdk1233://",   // TikTok
-        "com.atebits.Tweetie2": "twitter://",          // X / Twitter
-        "com.facebook.Facebook": "fb://",
-        "com.toyopagroup.picaboo": "snapchat://",
-        "net.whatsapp.WhatsApp": "whatsapp://",
-        "com.reddit.Reddit": "reddit://",
-        "com.spotify.client": "spotify://",
-        "jp.naver.line": "line://",                    // LINE
-        "ph.telegra.Telegraph": "tg://",               // Telegram
-        "com.hammerandchisel.discord": "discord://",
-        "com.netflix.Netflix": "nflx://",
-        "com.linkedin.LinkedIn": "linkedin://"      // LinkedIn
-    ]
 
     private let store = ManagedSettingsStore(named: .rushHourFocus)
     private var tickTimer: Timer?
@@ -111,6 +93,7 @@ final class FocusViewModel: ObservableObject {
         isEngaged = false
         isRunning = false
         for distraction in activeBreaks {
+            distraction.breakGrantedUntil = nil   // clear stale break state so nothing reads as still-active
             cancelBreakNotification(for: distraction)
         }
         activeBreaks.removeAll()
@@ -142,6 +125,15 @@ final class FocusViewModel: ObservableObject {
         // opens the app themselves (that manual step is the friction we want).
         let appName = distraction.appDisplayName ?? distraction.appOpened
         startBreakActivity(appName: appName, until: until)
+        // The island shows a string; resolve the real name (data-access) and backfill so the
+        // island + the warning + the break-ended notification show it when the lookup works.
+        if (distraction.appDisplayName ?? "").isEmpty {
+            Task { @MainActor in
+                guard let name = await resolveDisplayName(for: distraction), !name.isEmpty else { return }
+                distraction.appDisplayName = name
+                startBreakActivity(appName: name, until: until)   // updates the island in place
+            }
+        }
         isRunning = false   // they're distracted now — auto-pause the session
     }
 
@@ -184,7 +176,7 @@ final class FocusViewModel: ObservableObject {
 
     private func startBreakActivity(appName: String, until endsAt: Date) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        let name = appName.isEmpty ? "That app" : appName
+        let name = appName.isEmpty ? "Blocked App" : appName
         let state = BreakActivityAttributes.ContentState(
             startedAt: Date(),
             endsAt: endsAt,
@@ -213,65 +205,40 @@ final class FocusViewModel: ObservableObject {
     private func endBreakActivity() {
         let current = liveActivity
         liveActivity = nil
+        // Keep the app alive long enough to actually tear the Live Activity down — otherwise
+        // ending the session can return before this async work runs and the island lingers.
+        let bgTask = UIApplication.shared.beginBackgroundTask(withName: "endBreakActivity")
         Task {
             await current?.end(nil, dismissalPolicy: .immediate)
             for activity in Activity<BreakActivityAttributes>.activities {
                 await activity.end(nil, dismissalPolicy: .immediate)
             }
+            UIApplication.shared.endBackgroundTask(bgTask)
         }
     }
 
-    // scheme for a bundle id. table wins — it covers apps whose scheme is an
-    // abbreviation (fb://, nflx://, tg://) or whose bundle id is an internal
-    // codename (com.zhiliaoapp.musically = TikTok). for anything not listed, guess
-    // from the last dot-component lowercased — works when brand == suffix == scheme
-    // (com.linkedin.LinkedIn → linkedin://). guess can be wrong, but the app's
-    // already unblocked so worst case is just no auto-bounce.
-    private func scheme(for bundleId: String) -> String? {
-        if let known = Self.schemeByBundleId[bundleId] { return known }
-        guard let last = bundleId.split(separator: ".").last else { return nil }
-        return "\(last.lowercased())://"
-    }
-
-    // exposed for the in-app "Test redirect" button — runs the exact same resolve
-    // path as on-submit, opens the app, and returns what it did so the Stats
-    // screen can show why it worked (or which step failed) without the shield flow.
-    func redirectDiagnostic(for distraction: Distraction) async -> String {
-        guard let bundleId = await resolveBundleId(for: distraction) else {
-            return "couldn't resolve a bundle id (no data access?)"
-        }
-        let mapped = Self.schemeByBundleId[bundleId] != nil
-        guard let scheme = scheme(for: bundleId), let url = URL(string: scheme) else {
-            return "resolved \(bundleId) but couldn't form a scheme"
-        }
-        UIApplication.shared.open(url, options: [:], completionHandler: nil)
-        return "opening \(bundleId) → \(scheme)\(mapped ? "" : " (guessed)")"
-    }
-
-    // open the specific app they broke. resolve its bundle id from the opaque
-    // token via the data-access API, map to a scheme, and open it.
-    private func routeBackToBlockedApp(for distraction: Distraction) {
+    // the visible app name from the opaque token (data-access). Label(token) covers
+    // the in-app card, but the Dynamic Island, the "one break at a time" warning, and
+    // the break-ended notification all need a plain string — this backfills it.
+    // Resolve the real app name up front, while the app is still foregrounded on the reason
+    // screen. If we only kick this off at break-grant time it can't finish — you immediately
+    // leave to open the app and the lookup is suspended, so the Live Activity stays "Blocked App".
+    func prefetchDisplayName(for distraction: Distraction) {
+        guard (distraction.appDisplayName ?? "").isEmpty else { return }
         Task { @MainActor in
-            guard let bundleId = await resolveBundleId(for: distraction),
-                  let scheme = scheme(for: bundleId),
-                  let url = URL(string: scheme) else { return }
-            try? await Task.sleep(nanoseconds: 500_000_000)   // let the shield lift first
-            UIApplication.shared.open(url, options: [:], completionHandler: nil)
+            if let name = await resolveDisplayName(for: distraction), !name.isEmpty {
+                distraction.appDisplayName = name
+            }
         }
     }
 
-    // recover the blocked app's bundle id from its opaque token by matching it
-    // against the installed-apps list — only readable when authorization is
-    // .approvedWithDataAccess. Falls back to any bundle id we already stored.
-    private func resolveBundleId(for distraction: Distraction) async -> String? {
-        if let data = distraction.tokenData,
-           let token = try? JSONDecoder().decode(ApplicationToken.self, from: data),
-           let apps = try? await FamilyActivityData.shared.installedApplications,
-           let match = apps.first(where: { $0.token == token }),
-           let bid = match.bundleIdentifier {
-            return bid
-        }
-        return distraction.appBundleId
+    private func resolveDisplayName(for distraction: Distraction) async -> String? {
+        guard let data = distraction.tokenData,
+              let token = try? JSONDecoder().decode(ApplicationToken.self, from: data),
+              let apps = try? await FamilyActivityData.shared.installedApplications,
+              let match = apps.first(where: { $0.token == token })
+        else { return nil }
+        return match.localizedDisplayName
     }
 
     func remainingSeconds(for distraction: Distraction) -> TimeInterval {
@@ -296,9 +263,15 @@ final class FocusViewModel: ObservableObject {
 
     private func applyShield() {
         let brokenTokens = Set(activeBreaks.compactMap { decodeToken($0.tokenData) })
+        // A break whose token we can't decode is a CATEGORY break: iOS gives no per-app
+        // token for a category, so we can't lift a single app out of it — we lift the
+        // WHOLE category for the break, then re-block when it ends. Individual-app breaks
+        // still lift surgically via brokenTokens above.
+        let hasCategoryBreak = activeBreaks.contains { decodeToken($0.tokenData) == nil }
+
         let effective = selection.applicationTokens.subtracting(brokenTokens)
         store.shield.applications = effective.isEmpty ? nil : effective
-        store.shield.applicationCategories = selection.categoryTokens.isEmpty
+        store.shield.applicationCategories = (selection.categoryTokens.isEmpty || hasCategoryBreak)
             ? nil
             : .specific(selection.categoryTokens)
         store.shield.webDomains = selection.webDomainTokens.isEmpty

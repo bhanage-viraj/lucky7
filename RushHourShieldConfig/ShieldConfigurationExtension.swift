@@ -30,6 +30,17 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
     private func recordOpen(name: String?, bundleId: String?) -> Int {
         CFPreferencesAppSynchronize(appGroupId as CFString)   // read/write the live store, not a cached copy
         guard let defaults = UserDefaults(suiteName: appGroupId) else { return 1 }
+
+        // Per-session reset. The app's direct deletions of our counts never reach us (our
+        // own cfprefs cache masks them), but a key only the APP writes — "sessionStartedAt"
+        // — we read fresh. When it changes, a new session has begun: reset our own counts.
+        let sessionStart = defaults.double(forKey: "sessionStartedAt")
+        if sessionStart != defaults.double(forKey: "countedSessionStart") {
+            defaults.set([String: Int](), forKey: "openCountsByApp")
+            defaults.set([String: Double](), forKey: "lastOpenByApp")
+            defaults.set(sessionStart, forKey: "countedSessionStart")
+        }
+
         defaults.set(defaults.integer(forKey: "configTick") + 1, forKey: "configTick")
         if let name { defaults.set(name, forKey: "lastShieldedAppName") }
         if let bundleId { defaults.set(bundleId, forKey: "lastShieldedBundleId") }
