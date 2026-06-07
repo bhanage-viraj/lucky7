@@ -110,10 +110,13 @@ struct WrappedVideoScreen: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 10)
 
+                Spacer(minLength: 16)
+
                 mediaCard
                     .padding(.horizontal, 20)
-                    .padding(.top, 20)
-                    .padding(.bottom, 30)
+                    .layoutPriority(1)
+
+                Spacer(minLength: 16)
 
                 playPauseButton
                     .padding(.bottom, 20)
@@ -122,6 +125,7 @@ struct WrappedVideoScreen: View {
         .frame(maxWidth: .infinity)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        .hidesFloatingTabBar()
         .onAppear {
             if let videoURL {
                 player = AVPlayer(url: videoURL)
@@ -148,6 +152,7 @@ struct WrappedVideoScreen: View {
 
             shareButton
         }
+        .padding(.horizontal, 20)
     }
 
     @ViewBuilder
@@ -165,39 +170,40 @@ struct WrappedVideoScreen: View {
 
     private var shareIcon: some View {
         Image(systemName: "square.and.arrow.up")
-            .font(.system(size: 16, weight: .bold))
-            .foregroundColor(.black)
-            .padding(12)
-            .background(Circle().fill(Color.white))
-            .overlay(Circle().stroke(Color.black, lineWidth: 2))
+            .font(.system(size: 20, weight: .semibold))
+            .foregroundColor(.white)
     }
 
     private var mediaCard: some View {
-        ZStack(alignment: .top) {
-            Group {
-                if let player {
-                    VideoPlayer(player: player)
-                } else if let firstFrame = videoFrames.first {
-                    Image(uiImage: firstFrame)
-                        .resizable()
-                        .scaledToFill()
-                } else {
-                    Color.gray.opacity(0.8)
-                        .overlay(
-                            Image(systemName: "person.crop.rectangle.fill")
-                                .resizable()
-                                .scaledToFit()
-                                .foregroundColor(.white.opacity(0.5))
-                                .padding(50)
-                        )
+        // 9:16 portrait — matches the iPhone camera capture so the wrap video
+        // fills the frame without letterbox bars.
+        Color.clear
+            .aspectRatio(9.0 / 16.0, contentMode: .fit)
+            .overlay {
+                Group {
+                    if let player {
+                        VideoPlayer(player: player)
+                    } else if let firstFrame = videoFrames.first {
+                        Image(uiImage: firstFrame)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        Color.gray.opacity(0.8)
+                            .overlay(
+                                Image(systemName: "person.crop.rectangle.fill")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .foregroundColor(.white.opacity(0.5))
+                                    .padding(50)
+                            )
+                    }
                 }
             }
-            .frame(height: 420)
             .clipShape(RoundedRectangle(cornerRadius: 32))
             .background(
                 RoundedRectangle(cornerRadius: 32)
                     .fill(Color.black)
-                    .offset(x: 0, y: 5)
+                    .offset(x: 0, y: 0)
             )
             .overlay(
                 LinearGradient(
@@ -207,19 +213,16 @@ struct WrappedVideoScreen: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 32))
             )
-            // The title / duration / date are already burned into the wrap video,
-            // so we no longer overlay them again here.
-        }
+            .frame(maxWidth: 340)
     }
 
     private var playPauseButton: some View {
         Button(action: togglePlayback) {
             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                 .font(.system(size: 24, weight: .black))
-                .foregroundColor(.black)
+                .foregroundColor(.white)
                 .frame(width: 64, height: 64)
-                .background(Circle().fill(Color.white))
-                .overlay(Circle().stroke(Color.black, lineWidth: 3))
+                .background(Circle().fill(Color.black))
         }
         .disabled(!isWrapReady)
         .opacity(isWrapReady ? 1 : 0.5)

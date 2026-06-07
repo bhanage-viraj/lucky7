@@ -15,11 +15,11 @@ struct SessionDetails: View {
     var videoFrames: [UIImage] = []
     var onSave: (() -> Void)? = nil
     var onFlowComplete: (() -> Void)? = nil
-    
+
     @Environment(\.modelContext) private var context
     @EnvironmentObject private var sessionRecording: SessionRecordingViewModel
     @Query private var sessions: [Session]
-    
+
     @State private var sessionTitle = ""
     @State private var sessionDescription = ""
     @State private var pickerItems: [PhotosPickerItem] = []
@@ -27,25 +27,28 @@ struct SessionDetails: View {
     @State private var showImageSourceDialog = false
     @State private var showCamera = false
     @State private var showLibrary = false
-    @State private var hasExitedFlow = false
 
     private let maxSnapshots = 6
-    
+    private let maxTitleLength = 30
+
+    /// Dark navy fill for the SAVE button (matches the design mock-up).
+    private let saveButtonColor = Color(red: 30 / 255, green: 58 / 255, blue: 95 / 255)
+
     // filtering only 3 frames for snapshots
     private var displayFrame: [UIImage] {
         guard !videoFrames.isEmpty else { return [] }
-        
+
         if videoFrames.count <= 3 {
             return videoFrames
         }
-        
+
         let firstFrame = videoFrames.first!
         let middleFrame = videoFrames[videoFrames.count / 2]
         let lastFrame = videoFrames.last!
-        
+
         return [firstFrame, middleFrame, lastFrame]
     }
-    
+
     private var canSave: Bool {
         !sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
         !sessionDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
@@ -68,206 +71,212 @@ struct SessionDetails: View {
             image.draw(in: CGRect(origin: .zero, size: newSize))
         }
     }
-    
+
     var body: some View {
         ZStack {
             Color("CanvasBlue")
                 .ignoresSafeArea()
-            
+
             Image("PatternBackground")
                 .resizable()
                 .scaledToFill()
                 .ignoresSafeArea()
                 .offset(y: -30)
-            
+
             ScrollView {
-                VStack (spacing: 4) {
-                    
-                    HStack {
-                        Button(action: exitToHome) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 18, weight: .heavy))
-                                .foregroundColor(.white)
+                VStack(spacing: 24) {
+                    sessionCard
+                    saveButton
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 24)
+                .padding(.bottom, 40)
+            }
+        }
+    }
+
+    // MARK: - Card
+
+    private var sessionCard: some View {
+        PatternBorderedCard {
+            VStack(spacing: 22) {
+                SnapshotsView(images: displayFrame)
+
+                Text("How was your session?")
+                    .font(.custom("Special Gothic Expanded One", size: 22))
+                    .foregroundColor(.black)
+                    .multilineTextAlignment(.center)
+
+                LabeledField(title: "TITLE") {
+                    TextField("Give your session a title", text: $sessionTitle)
+                        .font(.system(size: 15))
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .formFieldStyle()
+                        .onChange(of: sessionTitle) { _, newValue in
+                            if newValue.count > maxTitleLength {
+                                sessionTitle = String(newValue.prefix(maxTitleLength))
+                            }
                         }
-                        Spacer()
-                    }
-                    .padding(.horizontal, 32)
-                    
-                    SnapshotsView(images: displayFrame)
-                        .padding(.top, 2)
-                    
-                    ZStack {
-                        ForEach([CGPoint(x: -2, y: -2), CGPoint(x: 0, y: -2), CGPoint(x: 2, y: -2),
-                                 CGPoint(x: -2, y: 0),                         CGPoint(x: 2, y: 0),
-                                 CGPoint(x: -2, y: 2),  CGPoint(x: 0, y: 2),  CGPoint(x: 2, y: 2)], id: \.self) { p in
-                            Text("How was \nyour drive?")
-                                .foregroundColor(.white)
-                                .offset(x: p.x, y: p.y)
-                        }
-                        Text("How was \nyour drive?")
+                }
+
+                LabeledField(title: "HOW DID IT GO?") {
+                    TextField(
+                        "How do you feel during and after the session?",
+                        text: $sessionDescription,
+                        axis: .vertical
+                    )
+                    .lineLimit(3...8)
+                    .font(.system(size: 15))
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
+                    .formFieldStyle()
+                }
+
+                LabeledField(title: "ACTIVITIES SNAPSHOTS") {
+                    snapshotsField
+                }
+            }
+            .padding(.horizontal, 22)
+            .padding(.top, 32)
+            .padding(.bottom, 30)
+        }
+    }
+
+    // MARK: - Snapshots field
+
+    @ViewBuilder
+    private var snapshotsField: some View {
+        Group {
+            if uploadedSnapshots.isEmpty {
+                Button {
+                    showImageSourceDialog = true
+                } label: {
+                    VStack(spacing: 10) {
+                        Image(systemName: "photo")
+                            .font(.system(size: 30))
+                            .foregroundColor(.black)
+
+                        Text("Add Photos/Video")
+                            .font(.custom("Special Gothic Expanded One", size: 14))
                             .foregroundColor(.black)
                     }
-                    .font(.custom("Special Gothic Expanded One", size: 35))
-                    .multilineTextAlignment(.center)
-                    .padding(.bottom, 24)
-                    
-                    VStack(spacing: 24) {
-                        CardInput(title: "TITLE", backgroundColor: .white) {
-                            TextField("Give your session a title", text: $sessionTitle)
-                                .multilineTextAlignment(.center)
-                                .font(.custom("Special Gothic Expanded One", size: 14))
-                                .foregroundColor(.black).opacity(1)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 24)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 34)
+                }
+                .formFieldStyle()
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(uploadedSnapshots.enumerated()), id: \.offset) { index, img in
+                            Image(uiImage: img)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 80, height: 80)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .overlay(alignment: .topTrailing) {
+                                    Button {
+                                        uploadedSnapshots.remove(at: index)
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 18))
+                                            .symbolRenderingMode(.palette)
+                                            .foregroundStyle(.white, .black)
+                                    }
+                                    .padding(4)
+                                }
                         }
 
-                        CardInput(title: "HOW DID IT GO?", backgroundColor: .white) {
-                            TextField("What did you do during your session?\nHow did it go? How do you feel during and after the session?", text: $sessionDescription, axis: .vertical)
-                                .lineLimit(4...8)
-                                .multilineTextAlignment(.center)
-                                .font(.custom("Special Gothic Expanded One", size: 14))
-                                .foregroundColor(.black).opacity(1)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 24)
-                        }
-                        
-                        CardInput(title: "ACTIVITIES SNAPSHOTS", backgroundColor: Color.blue.opacity(0.3)) {
-                            if uploadedSnapshots.isEmpty {
-                                Button {
-                                    showImageSourceDialog = true
-                                } label: {
-                                    VStack(spacing: 12) {
-                                        Image(systemName: "camera.viewfinder")
-                                            .font(.system(size: 35))
-                                            .foregroundColor(.white)
-
-                                        Text("Take a photo or upload from your library")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(.white)
-                                            .multilineTextAlignment(.center)
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 40)
-                                }
-                            } else {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 8) {
-                                        ForEach(Array(uploadedSnapshots.enumerated()), id: \.offset) { index, img in
-                                            Image(uiImage: img)
-                                                .resizable()
-                                                .scaledToFill()
-                                                .frame(width: 80, height: 80)
-                                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                                .overlay(alignment: .topTrailing) {
-                                                    Button {
-                                                        uploadedSnapshots.remove(at: index)
-                                                    } label: {
-                                                        Image(systemName: "xmark.circle.fill")
-                                                            .font(.system(size: 18))
-                                                            .symbolRenderingMode(.palette)
-                                                            .foregroundStyle(.white, .black)
-                                                    }
-                                                    .padding(4)
-                                                }
-                                        }
-
-                                        if uploadedSnapshots.count < maxSnapshots {
-                                            Button {
-                                                showImageSourceDialog = true
-                                            } label: {
-                                                Image(systemName: "plus")
-                                                    .font(.system(size: 26, weight: .bold))
-                                                    .foregroundColor(.white)
-                                                    .frame(width: 80, height: 80)
-                                                    .background(
-                                                        RoundedRectangle(cornerRadius: 8)
-                                                            .fill(Color.white.opacity(0.25))
-                                                    )
-                                            }
-                                        }
-                                    }
-                                    .padding(.horizontal, 20)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 24)
-                            }
-                        }
-                        .confirmationDialog("Add a snapshot", isPresented: $showImageSourceDialog, titleVisibility: .visible) {
-                            if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                                Button("Take Photo") { showCamera = true }
-                            }
-                            Button("Choose from Library") { showLibrary = true }
-                            Button("Cancel", role: .cancel) {}
-                        }
-                        .photosPicker(
-                            isPresented: $showLibrary,
-                            selection: $pickerItems,
-                            maxSelectionCount: max(1, maxSnapshots - uploadedSnapshots.count),
-                            matching: .images
-                        )
-                        .sheet(isPresented: $showCamera) {
-                            CameraPicker { image in
-                                addSnapshot(image)
-                            }
-                            .ignoresSafeArea()
-                        }
-                        .onChange(of: pickerItems) { _, items in
-                            guard !items.isEmpty else { return }
-                            Task {
-                                var newImages: [UIImage] = []
-                                for item in items {
-                                    if let data = try? await item.loadTransferable(type: Data.self),
-                                       let img = UIImage(data: data) {
-                                        newImages.append(img)
-                                    }
-                                }
-                                await MainActor.run {
-                                    for img in newImages { addSnapshot(img) }
-                                    pickerItems = []
-                                }
+                        if uploadedSnapshots.count < maxSnapshots {
+                            Button {
+                                showImageSourceDialog = true
+                            } label: {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 26, weight: .bold))
+                                    .foregroundColor(.black)
+                                    .frame(width: 80, height: 80)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color.black.opacity(0.06))
+                                    )
                             }
                         }
                     }
-                    .padding(.horizontal, 24)
-                    .padding(10)
-                    
-                    Button(action: {
-                        if let session = sessions.first(where: { $0.id == sessionId }) {
-                            session.title = sessionTitle
-                            session.summary = sessionDescription
-                            session.snapshotImages = uploadedSnapshots.compactMap {
-                                $0.jpegData(compressionQuality: 0.8)
-                            }
-                            if let path = sessionRecording.finalVideoURL?.path {
-                                session.wrappedVideoPath = path
-                            }
-                            try? context.save()
-                        }
-                        onSave?()
-                    }) {
-                        Text("SAVE SESSION")
-                            .font(.custom("Special Gothic Expanded One", size: 16))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 18)
-                            .background(canSave ? Color.black : Color.black.opacity(0.3))
-                            .cornerRadius(100)
-                            .overlay(RoundedRectangle(cornerRadius: 100).stroke(Color.white, lineWidth: 2))
-                            .shadow(color: .black, radius: 0, x: 0, y: 5)
+                    .padding(12)
+                }
+                .formFieldStyle()
+            }
+        }
+        .confirmationDialog("Add a snapshot", isPresented: $showImageSourceDialog, titleVisibility: .visible) {
+            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                Button("Take Photo") { showCamera = true }
+            }
+            Button("Choose from Library") { showLibrary = true }
+            Button("Cancel", role: .cancel) {}
+        }
+        .photosPicker(
+            isPresented: $showLibrary,
+            selection: $pickerItems,
+            maxSelectionCount: max(1, maxSnapshots - uploadedSnapshots.count),
+            matching: .images
+        )
+        .sheet(isPresented: $showCamera) {
+            CameraPicker { image in
+                addSnapshot(image)
+            }
+            .ignoresSafeArea()
+        }
+        .onChange(of: pickerItems) { _, items in
+            guard !items.isEmpty else { return }
+            Task {
+                var newImages: [UIImage] = []
+                for item in items {
+                    if let data = try? await item.loadTransferable(type: Data.self),
+                       let img = UIImage(data: data) {
+                        newImages.append(img)
                     }
-                    .disabled(!canSave)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 12)
-                    .padding(.bottom, 40)
+                }
+                await MainActor.run {
+                    for img in newImages { addSnapshot(img) }
+                    pickerItems = []
                 }
             }
         }
     }
 
-    private func exitToHome() {
-        guard !hasExitedFlow else { return }
-        hasExitedFlow = true
-        onFlowComplete?()
+    // MARK: - Save button
+
+    private var saveButton: some View {
+        Button(action: saveSession) {
+            Text("SAVE")
+                .font(.custom("Special Gothic Expanded One", size: 16))
+                .foregroundColor(.white.opacity(0.7))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+                .background(canSave ? saveButtonColor : saveButtonColor.opacity(0.5))
+                .clipShape(RoundedRectangle(cornerRadius: 30))
+                .shadow(color: .black.opacity(0.7), radius: 0, x: 0, y: 4)
+        }
+        .disabled(!canSave)
+    }
+
+    private func saveSession() {
+        if let session = sessions.first(where: { $0.id == sessionId }) {
+            session.title = sessionTitle
+            session.summary = sessionDescription
+            session.snapshotImages = uploadedSnapshots.compactMap {
+                $0.jpegData(compressionQuality: 0.8)
+            }
+            if let path = sessionRecording.finalVideoURL?.path {
+                session.wrappedVideoPath = path
+            }
+            try? context.save()
+        }
+        onSave?()
     }
 }
 
@@ -313,9 +322,87 @@ struct CameraPicker: UIViewControllerRepresentable {
 
 // MARK: - Reusable Custom Components
 
+/// White card with a rounded-rectangle clip mask and the `BlackWhitePattern`
+/// checkerboard strip pinned to the chosen edges (ticket-style border).
+struct PatternBorderedCard<Content: View>: View {
+    var edges: Set<VerticalEdge>
+    var cornerRadius: CGFloat
+    let content: Content
+
+    init(
+        edges: Set<VerticalEdge> = [.top, .bottom],
+        cornerRadius: CGFloat = 28,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.edges = edges
+        self.cornerRadius = cornerRadius
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .frame(maxWidth: .infinity)
+            .background(Color.white)
+            .overlay(alignment: .top) {
+                if edges.contains(.top) {
+                    Image("BlackWhitePattern")
+                        .resizable()
+                        .frame(height: 12)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if edges.contains(.bottom) {
+                    Image("BlackWhitePattern")
+                        .resizable()
+                        .frame(height: 12)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .stroke(Color.black, lineWidth: 2)
+            )
+    }
+}
+
+/// A left-aligned uppercase label sitting above a form control.
+struct LabeledField<Content: View>: View {
+    let title: String
+    let content: Content
+
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.custom("Special Gothic Expanded One", size: 11))
+                .foregroundColor(.black)
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+extension View {
+    /// White rounded-rectangle field with a thin dark outline.
+    func formFieldStyle() -> some View {
+        background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.black.opacity(0.35), lineWidth: 1.5)
+        )
+    }
+}
+
 struct SnapshotsView: View {
     var images: [UIImage]
-    
+
     var body: some View {
         ZStack {
             if images.count > 1 {
@@ -329,7 +416,7 @@ struct SnapshotsView: View {
                     .rotationEffect(.degrees(-11))
                     .offset(x: -34, y: 5)
             }
-            
+
             if images.count > 2 {
                 Image(uiImage: images[2])
                     .resizable()
@@ -341,7 +428,7 @@ struct SnapshotsView: View {
                     .rotationEffect(.degrees(11))
                     .offset(x: 34, y: 5)
             }
-            
+
             if images.count > 0 {
                 Image(uiImage: images[0])
                     .resizable()
@@ -375,10 +462,10 @@ struct CardInput<Content: View>: View {
                 .shadow(color: .black, radius: 0, x: 0, y: 4)
                 .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.black, lineWidth: 1))
                 .padding(.top, 12)
-            
+
             content
                 .padding(.top, 12)
-            
+
             Text(title)
                 .font(.custom("Special Gothic Expanded One", size: 10))
                 .foregroundColor(.white)
