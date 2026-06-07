@@ -94,6 +94,7 @@ struct HomePage: View {
             }
             .navigationDestination(isPresented: $showRecordingPage) {
                 RecordingPage()
+                    .hidesFloatingTabBar()
             }
         }
         }

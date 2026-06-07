@@ -14,6 +14,7 @@ struct FullFocusScreen: View {
     @EnvironmentObject private var focusController: FocusViewModel
     #endif
     @State private var showCrashSession = false
+    @State private var showEndSessionSheet = false
     
     var body: some View {
         NavigationStack{
@@ -38,28 +39,22 @@ struct FullFocusScreen: View {
                         .frame(height: 24)
                     
                     HStack {
-                        Color.clear
-                            .frame(width: 48, height: 48)
                         
-                        Spacer()
+                        Text("PAUSED")
+                            .foregroundStyle(.white)
+                            .font(.system(size: 14))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule()
+                                    .fill(Color(.canvasRed))
+                            )
+                            .opacity(countdown.isRunning ? 0 : 1)
+                        //
+                        //                        MarqueeText(
+                        //                            text: "Playing Dropdead by Olivia Rodrigo"
+                        //                        )
                         
-                        MarqueeText(
-                            text: "Playing Dropdead by Olivia Rodrigo"
-                        )
-                        
-                        Spacer()
-                        
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "arrow.up.right.and.arrow.down.left")
-                                .foregroundColor(.white)
-                                .frame(width: 48, height: 48)
-                                .background(
-                                    Capsule()
-                                        .fill(Color("CanvasDarkGrey"))
-                                )
-                        }
                     }
                     .padding(.horizontal, 12)
                     
@@ -91,39 +86,23 @@ struct FullFocusScreen: View {
                         Image(.trafficLight)
                         
                         HStack {
-                            VStack {
-                                Text("\(countdown.hours)")
-                                    .font(.custom("Special Gothic Expanded One", size: 34))
-                                Text("Hours")
-                                    .font(.custom("Special Gothic Expanded One", size: 10))
-                            }
-                            .frame(width: 104, height: 102)
+                            Text("\(countdown.hours)")
+                                .font(.custom("Special Gothic Expanded One", size: 34))
+                                .frame(width: 104, height: 102)
                             
-                            VStack {
-                                Text(String(format: "%02d", countdown.minutes))
-                                    .font(.custom("Special Gothic Expanded One", size: 34))
-                                Text("Minutes")
-                                    .font(.custom("Special Gothic Expanded One", size: 10))
-                            }
-                            .frame(width: 104, height: 102)
+                            Text(String(format: "%02d", countdown.minutes))
+                                .font(.custom("Special Gothic Expanded One", size: 34))
+                                .frame(width: 104, height: 102)
                             
-                            VStack {
-                                Image(systemName: countdown.isRunning ? "pause.fill" : "play.fill")
-                                    .font(.system(size: 20))
-                                Color.clear
-                                    .frame(height: 1)
-                                Text(countdown.isRunning ? "PAUSE" : "RESUME")
-                                    .font(.custom("Special Gothic Expanded One", size: 13))
-                            }
-                            .foregroundStyle(countdown.isRunning ? .yellow : .white)
-                            .frame(width: 110, height: 102)
-                            .clipped()
-                            .onTapGesture {
-                                countdown.toggle()
-                            }
+                            Text(String(format: "%02d", countdown.seconds))
+                                    .font(.custom("Special Gothic Expanded One", size: 34))
+                                    .frame(width: 110, height: 102)
+                                    .clipped()
+                                    .onTapGesture {
+                                        countdown.toggle()
+                                    }
                         }
                         .foregroundStyle(.white)
-                        .opacity(0.4)
                         .frame(height: 136)
                         .zIndex(2.0)
                         .offset(y: -8)
@@ -141,19 +120,83 @@ struct FullFocusScreen: View {
                     
                     Spacer()
                     
-                    if (!countdown.isRunning) {
-                        Button {
-                            endSessionFromFullFocus()
-                        } label: {
-                            Text("END SESSION")
-                                .foregroundColor(.warningRed)
-                                .padding()
-                                .background(
-                                    Capsule()
-                                        .stroke(.warningRed)
-                                )
+//                    if (!countdown.isRunning) {
+//                        Button {
+//                            endSessionFromFullFocus()
+//                        } label: {
+//                            Text("END SESSION")
+//                                .foregroundColor(.warningRed)
+//                                .padding()
+//                                .background(
+//                                    Capsule()
+//                                        .stroke(.warningRed)
+//                                )
+//                        }
+//                    }
+                    
+                    HStack{
+                        Button(action: {
+                            showEndSessionSheet = true
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(.white.opacity(0.75))
+                                    .frame(width: 56, height: 56)
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(.red)
+                                    .frame(width: 20, height: 20)
+                            }
+                        }
+                        .sheet(isPresented: $showEndSessionSheet) {
+                            EndSessionSheet(
+                                onEnd: {
+                                    showEndSessionSheet = false
+                                    endSessionFromFullFocus()
+                                },
+                                onCancel: {
+                                    showEndSessionSheet = false
+                                }
+                            )
+                            .presentationDetents([.height(220)])
+                            .presentationDragIndicator(.visible)
+                            .presentationCornerRadius(24)
+                            .presentationBackground(.white)
+                        }
+                        
+                        Spacer()
+
+                        Button(action: {
+                            countdown.toggle()
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(.white.opacity(0.75))
+                                    .frame(width: 100, height: 100)
+                                Image(systemName: countdown.isRunning ? "pause.fill" : "play.fill")
+                                    .font(.system(size: 36))
+                                    .foregroundStyle(.black)
+                            }
+                        }
+                        
+                        Spacer()
+
+                        Button(action: {
+                            dismiss()
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(.white.opacity(0.75))
+                                    .frame(width: 56, height: 56)
+                                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                    .font(.system(size: 18))
+                                    .foregroundStyle(.black)
+                            }
                         }
                     }
+                    .padding(.horizontal, 24)
+                    
+                    Color.clear
+                        .frame(height: 16)
                 }
             }
         }
@@ -179,7 +222,7 @@ struct FullFocusScreen: View {
             })
         }
     }
-
+    
     private func endSessionFromFullFocus() {
         countdown.pause()
         #if os(iOS)
@@ -325,3 +368,68 @@ class FocusCameraManager: ObservableObject {
     }
 }
 
+// MARK: - End Session Sheet
+struct EndSessionSheet: View {
+    var onEnd: () -> Void
+    var onCancel: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Spacer()
+                Button {
+                    onCancel()
+                } label: {
+                    Image(systemName: "xmark")
+                        .foregroundStyle(.black)
+                        .padding(8)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            
+            // Title & Subtitle
+            Text("End Session")
+                .font(.title2.bold())
+                .padding(.bottom, 8)
+            
+            Text("Ending now will stop recording\nand end your session early")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.bottom, 24)
+            
+            // Buttons
+            HStack(spacing: 12) {
+                // END button
+                Button(action: onEnd) {
+                    Text("END")
+                        .font(.headline)
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(
+                            Capsule()
+                                .stroke(.red, lineWidth: 1.5)
+                        )
+                }
+                
+                // CANCEL button
+                Button(action: onCancel) {
+                    Text("CANCEL")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(
+                            Capsule()
+                                .fill(.black)
+                        )
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+        .padding(.bottom, 8)
+    }
+}
