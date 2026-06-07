@@ -47,7 +47,10 @@ struct Loading: View {
                 .tint(.white)
                 .onAppear { UIApplication.shared.enableTapToDismissKeyboard() }
             } else {
-                AppBlockOnboardingScreen(onDone: {
+//                AppBlockOnboardingScreen(onDone: {
+//                    didShowOnboarding = true
+//                })
+                OnBoarding1(onComplete: {
                     didShowOnboarding = true
                 })
             }

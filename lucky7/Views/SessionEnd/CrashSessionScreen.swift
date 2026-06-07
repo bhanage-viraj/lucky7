@@ -83,7 +83,11 @@ struct CrashSessionScreen: View {
 
     private var celebrationView: some View {
         ZStack {
-            Color("CanvasRed")
+            LinearGradient(
+                    colors: [Color(hex: "003261"), Color(hex: "0B1F32")],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
                 .ignoresSafeArea()
 
             Image("PatternBackgroundSmall")
@@ -190,4 +194,18 @@ struct CrashSessionScreen: View {
         .environmentObject(SessionTimerViewModel())
         .environmentObject(SessionRecordingViewModel())
         .modelContainer(for: Session.self, inMemory: true)
+}
+
+// MARK: - Extension Color
+
+extension Color {
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let r = Double((int >> 16) & 0xFF) / 255
+        let g = Double((int >> 8) & 0xFF) / 255
+        let b = Double(int & 0xFF) / 255
+        self.init(red: r, green: g, blue: b)
+    }
 }

@@ -8,6 +8,7 @@ import SwiftUI
 struct OnboardingScreenTemplate<Content: View>: View {
     let step: Int
     let buttonText: String?
+    var isDisabled: Bool?
     var onContinue: () -> Void
     var onBack: (() -> Void)?
     var onGoPrevious: (() -> Void)?
@@ -17,6 +18,7 @@ struct OnboardingScreenTemplate<Content: View>: View {
     init(
         step: Int,
         buttonText: String? = nil,
+        isDisabled: Bool? = false,
         onContinue: @escaping () -> Void = {},
         onBack: (() -> Void)? = nil,
         onGoPrevious: (() -> Void)? = nil,
@@ -25,6 +27,7 @@ struct OnboardingScreenTemplate<Content: View>: View {
     ) {
         self.step = step
         self.buttonText = buttonText
+        self.isDisabled = isDisabled
         self.onContinue = onContinue
         self.onBack = onBack
         self.onGoPrevious = onGoPrevious
@@ -89,6 +92,8 @@ struct OnboardingScreenTemplate<Content: View>: View {
                             .padding(.vertical, 20)
                             .background(Capsule().fill(Color.black))
                     }
+                    .disabled(isDisabled ?? false)
+                    .opacity(isDisabled ?? false ? 0.5 : 1)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 20)
                 }
@@ -177,6 +182,7 @@ extension OnboardingScreenTemplate where Content == EmptyView {
     init(
         step: Int,
         buttonText: String? = nil,
+        isDisabled: Bool? = false,
         onContinue: @escaping () -> Void = {},
         onBack: (() -> Void)? = nil,
         onGoPrevious: (() -> Void)? = nil,
@@ -185,6 +191,7 @@ extension OnboardingScreenTemplate where Content == EmptyView {
         self.init(
             step: step,
             buttonText: buttonText,
+            isDisabled: isDisabled,
             onContinue: onContinue,
             onBack: onBack,
             onGoPrevious: onGoPrevious,
