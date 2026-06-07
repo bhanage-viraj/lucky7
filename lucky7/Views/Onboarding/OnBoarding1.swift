@@ -26,7 +26,7 @@ struct OnBoarding1: View {
                 case 2:
                     OnBoarding2(path: $path)
                 case 3:
-                    OnBoarding3(path: $path, onComplete: onComplete)
+                    OnBoarding3(path: $path, onComplete: onComplete, onDone: onComplete)
                 default:
                     EmptyView()
                 }
@@ -54,6 +54,7 @@ struct OnBoarding1: View {
                 )
                 .multilineTextAlignment(.center)
             }
+            .foregroundStyle(.black)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
 
@@ -71,4 +72,5 @@ struct OnBoarding1: View {
 
 #Preview {
     OnBoarding1()
+        .environmentObject(FocusViewModel())
 }

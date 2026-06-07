@@ -64,7 +64,10 @@ struct Loading: View {
                     withAnimation(.easeInOut(duration: 0.2)) { selectedTab = 0 }
                 }
             } else {
-                AppBlockOnboardingScreen(onDone: {
+//                AppBlockOnboardingScreen(onDone: {
+//                    didShowOnboarding = true
+//                })
+                OnBoarding1(onComplete: {
                     didShowOnboarding = true
                 })
             }
