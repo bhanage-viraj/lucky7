@@ -10,6 +10,9 @@ struct FullFocusScreen: View {
     @StateObject private var camera = FocusCameraManager()
     @EnvironmentObject private var countdown: SessionTimerViewModel
     @EnvironmentObject private var sessionRecording: SessionRecordingViewModel
+    #if os(iOS)
+    @EnvironmentObject private var focusController: FocusViewModel
+    #endif
     @State private var showCrashSession = false
     
     var body: some View {
@@ -158,6 +161,9 @@ struct FullFocusScreen: View {
             if show {
                 let wallClock = TimeInterval(countdown.elapsedSeconds)
                 sessionRecording.stopRecordingAndExport(wallClockSeconds: wallClock) { }
+                #if os(iOS)
+                focusController.release()   // timer hit 00:00 in the expanded screen — lift the shield now
+                #endif
             }
         }
         .fullScreenCover(isPresented: $countdown.showFinishSession) {
@@ -176,6 +182,9 @@ struct FullFocusScreen: View {
 
     private func endSessionFromFullFocus() {
         countdown.pause()
+        #if os(iOS)
+        focusController.release()   // ending from the expanded screen must lift the shield too
+        #endif
         let wallClock = TimeInterval(countdown.elapsedSeconds)
         sessionRecording.stopRecordingAndExport(wallClockSeconds: wallClock) {
             showCrashSession = true
@@ -185,6 +194,11 @@ struct FullFocusScreen: View {
 
 #Preview {
     FullFocusScreen()
+        .environmentObject(SessionTimerViewModel())
+        .environmentObject(SessionRecordingViewModel())
+        #if os(iOS)
+        .environmentObject(FocusViewModel())
+        #endif
 }
 
 // MARK: - MarqueText

@@ -33,6 +33,12 @@ final class FocusViewModel: ObservableObject {
 
     init() {
         loadSelection()
+        // Cold launch: a recording session can't survive an app kill, and closing the app ends
+        // the session — so any shield still applied is stale. Lift it now; engage() re-applies
+        // when the user starts a new session. (Backgrounding keeps the app alive and does NOT
+        // hit this, so a briefly-paused session stays blocked.)
+        store.clearAllSettings()
+        SharedJailbreakStore.endSession()
     }
 
     var hasSelection: Bool {
@@ -90,6 +96,7 @@ final class FocusViewModel: ObservableObject {
 
     func release() {
         store.clearAllSettings()
+        SharedJailbreakStore.endSession()   // tell the monitor ext + next launch the session is over
         isEngaged = false
         isRunning = false
         for distraction in activeBreaks {

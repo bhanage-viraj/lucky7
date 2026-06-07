@@ -26,11 +26,22 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
         return try? JSONDecoder().decode(FamilyActivitySelection.self, from: data)
     }
 
-    // break is over → put the shield back on everything
+    // break is over → put the shield back on everything, UNLESS the focus session already
+    // ended (or the app was closed). Re-blocking after the session is over was the bug where
+    // apps stayed locked — if no session is active we clear the shield instead.
     override func intervalDidEnd(for activity: DeviceActivityName) {
         super.intervalDidEnd(for: activity)
-        guard let selection = loadSelection() else { return }
         let store = ManagedSettingsStore(named: ManagedSettingsStore.Name("rushhour.focus"))
+        CFPreferencesAppSynchronize(appGroupId as CFString)   // dodge the stale cfprefs cache
+        let sessionActive = UserDefaults(suiteName: appGroupId)?.bool(forKey: "sessionActive") ?? false
+        // session over / app closed → lift the shield. ONLY the session flag may trigger a clear.
+        guard sessionActive else {
+            store.clearAllSettings()
+            return
+        }
+        // session still running → reblock. If the selection can't be read, leave the existing
+        // shield as-is (fail safe for a blocker) instead of unblocking everything.
+        guard let selection = loadSelection() else { return }
         store.shield.applications = selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
         store.shield.applicationCategories = selection.categoryTokens.isEmpty ? nil : .specific(selection.categoryTokens)
         store.shield.webDomains = selection.webDomainTokens.isEmpty ? nil : selection.webDomainTokens

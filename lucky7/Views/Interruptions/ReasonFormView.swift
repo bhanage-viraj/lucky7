@@ -15,130 +15,156 @@ struct ReasonFormView: View {
 
     @FocusState private var fieldFocused: Bool
 
-    private let reasonRed = Color(red: 0xE0/255.0, green: 0x2D/255.0, blue: 0x38/255.0)
+    // straight off the figma — navy sheet gradient + dark navy "Reason" title
+    private let sheetTop = Color(red: 0x00/255.0, green: 0x32/255.0, blue: 0x61/255.0)
+    private let sheetBottom = Color(red: 0x0B/255.0, green: 0x1F/255.0, blue: 0x32/255.0)
+    private let titleNavy = Color(red: 0x02/255.0, green: 0x2B/255.0, blue: 0x54/255.0)
 
     var body: some View {
         GeometryReader { geo in
-            ZStack {
-                Color("CanvasRed")
+            // card grows with the screen but stays sane on the small ones (lands ~420 on a normal phone)
+            let cardHeight = min(420, max(geo.size.height * 0.50, 300))
 
-                Image("TicketCardPattern")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .opacity(0.18)
-                    .clipped()
+            ZStack(alignment: .bottom) {
+                // dimmed session behind the sheet (the figma dims the recording screen ~80% black)
+                Color.black.opacity(0.82)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture { fieldFocused = false }
 
-                VStack(spacing: 0) {
-                    Spacer(minLength: 50)
-
-                    Image("ReasonFormHeader")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: 120)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 70)
-                        .offset(y: 40)
-                        .zIndex(2)
-
-                    reasonCard
-                        .zIndex(1)
-
-                    buttons
-                        .padding(.top, 16)
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 24)
-                .frame(width: geo.size.width, height: geo.size.height)
+                sheet(cardHeight: cardHeight)
             }
-            .frame(width: geo.size.width, height: geo.size.height)
-            .clipped()
+            // keep the sheet pinned to the bottom — don't let the keyboard shove it up and expose the scrim
+            .ignoresSafeArea(.keyboard, edges: .bottom)
         }
-        .ignoresSafeArea()
-        .contentShape(Rectangle())
-        .onTapGesture { fieldFocused = false }
     }
 
-    private var reasonCard: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 32).fill(.black).offset(y: 6)
-            RoundedRectangle(cornerRadius: 32)
-                .fill(.white)
-                .overlay(RoundedRectangle(cornerRadius: 32).strokeBorder(.black, lineWidth: 2))
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Reason")
-                    .font(.custom("SpecialGothicExpandedOne-Regular", size: 30))
-                    .foregroundStyle(reasonRed)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
-
-                ZStack(alignment: .topLeading) {
-                    if reason.isEmpty {
-                        Text("I open this because….")
-                            .font(.system(size: 18))
-                            .foregroundStyle(.black.opacity(0.35))
-                            .padding(.top, 8)
-                            .padding(.leading, 5)
-                    }
-                    TextEditor(text: $reason)
-                        .font(.system(size: 18))
-                        .foregroundColor(.black)   // card is always white, so keep text black in both modes
-                        .tint(.black)
-                        .scrollContentBackground(.hidden)
-                        .focused($fieldFocused)
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 180)
-                }
-
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 24)
-            .padding(.top, 40)
-            .padding(.bottom, 24)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .clipShape(RoundedRectangle(cornerRadius: 32))
+    private func sheet(cardHeight: CGFloat) -> some View {
+        VStack(spacing: 20) {
+            grabber
+            reasonCard(height: cardHeight)
+            buttons
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.top, 14)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 40)
+        .frame(maxWidth: .infinity)
+        // navy panel, only the top corners rounded, runs off the bottom edge
+        .background {
+            UnevenRoundedRectangle(topLeadingRadius: 40, topTrailingRadius: 40)
+                .fill(LinearGradient(colors: [sheetTop, sheetBottom], startPoint: .top, endPoint: .bottom))
+                .shadow(color: .black.opacity(0.25), radius: 20, x: 0, y: -8)
+                .ignoresSafeArea(.container, edges: .bottom)
+        }
+        // stop sign / 😩 / 🚧 cluster sits BEHIND the sheet and peeks over the top edge
+        .background(alignment: .top) {
+            Image("ReasonFormHeader")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 272)
+                .offset(y: -140)
+        }
+    }
+
+    private var grabber: some View {
+        Capsule()
+            .fill(.white.opacity(0.7))
+            .frame(width: 56, height: 6)
+    }
+
+    private func reasonCard(height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 36)
+            .fill(.white)
+            .frame(height: height)
+            // faint swirl baked into the figma card
+            .overlay {
+                Image("Vector16")
+                    .resizable()
+                    .scaledToFill()
+            }
+            .overlay(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Reason")
+                        .font(.custom("SpecialGothicExpandedOne-Regular", size: 32))
+                        .foregroundStyle(titleNavy)
+
+                    ZStack(alignment: .topLeading) {
+                        if reason.isEmpty {
+                            Text("I open this because….")
+                                .font(.system(size: 22))
+                                .foregroundStyle(.black.opacity(0.30))
+                                .padding(.top, 8)
+                                .padding(.leading, 5)
+                                .allowsHitTesting(false)   // taps fall through to the editor + its caret
+                        }
+                        TextEditor(text: $reason)
+                            .font(.system(size: 22))
+                            .foregroundStyle(.black)   // card is always white, keep text black in both modes
+                            .tint(.black)              // native blinking caret, black so it shows on white
+                            .scrollContentBackground(.hidden)
+                            .focused($fieldFocused)
+                            .toolbar {
+                                ToolbarItemGroup(placement: .keyboard) {
+                                    Spacer()
+                                    Button("Done") { fieldFocused = false }
+                                }
+                            }
+                    }
+                    .frame(maxHeight: .infinity, alignment: .topLeading)
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 28)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 36))
+            .overlay {
+                RoundedRectangle(cornerRadius: 36).strokeBorder(.black, lineWidth: 1.5)
+            }
     }
 
     private var buttons: some View {
-        VStack(spacing: 6) {
+        // faded + disabled until they actually write something (matches the figma)
+        let canSubmit = !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        return VStack(spacing: 10) {
             Button {
                 onSubmit(reason)
             } label: {
-                Text("SUBMIT")
-                    .font(.custom("SpecialGothicExpandedOne-Regular", size: 16))
-                    .tracking(1.0)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(
-                        Capsule()
-                            .fill(.black)
-                            .overlay(Capsule().strokeBorder(.white, lineWidth: 2))
-                    )
-                    .shadow(color: .black, radius: 0, x: 1, y: 4)
+                pill(title: "SUBMIT & UNLOCK", bordered: false)
+                    .opacity(canSubmit ? 1 : 0.5)
             }
             .buttonStyle(.plain)
+            .disabled(!canSubmit)
 
             Button(action: onSkip) {
-                Text("SKIP")
-                    .font(.custom("SpecialGothicExpandedOne-Regular", size: 16))
-                    .tracking(1.4)
-                    .foregroundStyle(.white)
-                    .padding(.vertical, 14)
+                pill(title: "CANCEL", bordered: true)
             }
+            .buttonStyle(.plain)
         }
+    }
+
+    private func pill(title: String, bordered: Bool) -> some View {
+        Text(title)
+            .font(.custom("SpecialGothicExpandedOne-Regular", size: 14))
+            .tracking(0.5)
+            .foregroundStyle(.black)
+            .frame(maxWidth: .infinity)
+            .frame(height: 56)
+            .background(Capsule().fill(.white))
+            .overlay {
+                if bordered {
+                    Capsule().strokeBorder(.black, lineWidth: 1.5)
+                }
+            }
     }
 }
 
 #Preview {
-    ReasonFormView(
-        appName: "Instagram",
-        onSubmit: { _ in },
-        onSkip: {}
-    )
+    ZStack {
+        Color.gray
+        ReasonFormView(
+            appName: "Instagram",
+            onSubmit: { _ in },
+            onSkip: {}
+        )
+    }
 }
