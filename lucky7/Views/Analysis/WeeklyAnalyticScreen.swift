@@ -8,18 +8,72 @@
 import SwiftUI
 import SwiftData
 import PhotosUI
+import FamilyControls
+import ManagedSettings
 
 struct WeeklyAnalyticScreen: View {
-    /// The sessions that fall in this week (passed in from the history screen).
-    var sessions: [Session] = []
-    /// First day of the week these stats describe.
+    /// First day of the week initially shown (passed in from the history screen).
     var weekStart: Date = Date()
-    var videoFrames: [UIImage] = []
 
-    /// All recorded distractions; filtered down to this week's sessions below.
+    @Environment(\.dismiss) private var dismiss
+
+    /// Whole store; the displayed week is filtered out of these so the chevrons
+    /// can move between weeks without pushing a new screen.
+    @Query private var allSessions: [Session]
     @Query private var allDistractions: [Distraction]
 
+    /// How many weeks away from `weekStart` we're viewing (0 = the initial week).
+    @State private var weekOffset: Int = 0
+
     private let calendar = Calendar.current
+
+    /// First day of the week currently being shown.
+    private var currentWeekStart: Date {
+        calendar.date(byAdding: .day, value: weekOffset * 7, to: weekStart) ?? weekStart
+    }
+
+    /// Sessions that fall inside the displayed week. Uses the same week interval
+    /// the history screen groups by, so a session can't slip through a boundary.
+    private var sessions: [Session] {
+        guard let interval = calendar.dateInterval(of: .weekOfYear, for: currentWeekStart) else { return [] }
+        return allSessions.filter { interval.contains($0.startTime) }
+    }
+
+    /// Snapshot frames decoded from the displayed week's sessions.
+    private var videoFrames: [UIImage] {
+        sessions.flatMap { $0.snapshotImages }.compactMap { UIImage(data: $0) }
+    }
+
+    /// Start of the current calendar week — the forward bound (no future data).
+    private var thisWeekStart: Date {
+        calendar.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
+    }
+
+    /// Start of the week containing the earliest recorded session — the backward
+    /// bound. Nil only when there are no sessions at all.
+    private var earliestWeekStart: Date? {
+        guard let earliest = allSessions.map(\.startTime).min() else { return nil }
+        return calendar.dateInterval(of: .weekOfYear, for: earliest)?.start
+    }
+
+    /// True when the displayed week is the current week (forward chevron off).
+    private var isAtCurrentWeek: Bool {
+        currentWeekStart >= thisWeekStart
+    }
+
+    /// True while there's an earlier week with data to step back to.
+    private var canGoBack: Bool {
+        guard let earliest = earliestWeekStart else { return false }
+        return currentWeekStart > earliest
+    }
+
+    private func changeWeek(by weeks: Int) {
+        let newOffset = weekOffset + weeks
+        guard let candidate = calendar.date(byAdding: .day, value: newOffset * 7, to: weekStart) else { return }
+        guard candidate <= thisWeekStart else { return }                 // no future weeks
+        if let earliest = earliestWeekStart, candidate < earliest { return } // no weeks before first session
+        withAnimation(.easeInOut(duration: 0.2)) { weekOffset = newOffset }
+    }
 
     private var displayFrame: [UIImage] {
         guard !videoFrames.isEmpty else { return [] }
@@ -68,13 +122,14 @@ struct WeeklyAnalyticScreen: View {
     }
 
     private var weekRangeLabel: String {
-        let end = calendar.date(byAdding: .day, value: 6, to: weekStart) ?? weekStart
-        if calendar.isDate(weekStart, equalTo: end, toGranularity: .month) {
-            return "\(formatted(weekStart, "d")) - \(formatted(end, "d MMMM yyyy"))"
-        } else if calendar.isDate(weekStart, equalTo: end, toGranularity: .year) {
-            return "\(formatted(weekStart, "d MMM")) - \(formatted(end, "d MMM yyyy"))"
+        let start = currentWeekStart
+        let end = calendar.date(byAdding: .day, value: 6, to: start) ?? start
+        if calendar.isDate(start, equalTo: end, toGranularity: .month) {
+            return "\(formatted(start, "d")) - \(formatted(end, "d MMMM yyyy"))"
+        } else if calendar.isDate(start, equalTo: end, toGranularity: .year) {
+            return "\(formatted(start, "d MMM")) - \(formatted(end, "d MMM yyyy"))"
         } else {
-            return "\(formatted(weekStart, "d MMM yyyy")) - \(formatted(end, "d MMM yyyy"))"
+            return "\(formatted(start, "d MMM yyyy")) - \(formatted(end, "d MMM yyyy"))"
         }
     }
 
@@ -98,7 +153,7 @@ struct WeeklyAnalyticScreen: View {
     /// Per-day focus / distracted split for the seven days of the week.
     private var dayStats: [DayStat] {
         (0..<7).map { offset in
-            let day = calendar.date(byAdding: .day, value: offset, to: weekStart) ?? weekStart
+            let day = calendar.date(byAdding: .day, value: offset, to: currentWeekStart) ?? currentWeekStart
             let daySessions = sessions.filter { calendar.isDate($0.startTime, inSameDayAs: day) }
             let dayIDs = Set(daySessions.map(\.id))
             let distracted = weekDistractions
@@ -145,13 +200,73 @@ struct WeeklyAnalyticScreen: View {
         return formatted(worst.date, "EEEE")
     }
 
-    /// The three apps that ate the most time this week.
-    private var topDistractingApps: [(name: String, duration: TimeInterval)] {
-        Dictionary(grouping: weekDistractions, by: { $0.appOpened })
-            .map { (name: $0.key, duration: $0.value.reduce(0) { $0 + $1.distractionDuration }) }
+    /// The three apps that ate the most time this week, aggregated by their
+    /// Screen Time token so the real icon/name can be shown via `Label(token)`.
+    /// Category-level distractions (no per-app token) fall back to their name.
+    private var topDistractingApps: [DistractingApp] {
+        var byToken: [ApplicationToken: (name: String, duration: TimeInterval)] = [:]
+        var byName: [String: TimeInterval] = [:]
+
+        for distraction in weekDistractions {
+            let duration = distraction.distractionDuration
+            if let token = decodeToken(distraction.tokenData) {
+                var entry = byToken[token] ?? (resolvedName(distraction), 0)
+                entry.duration += duration
+                if entry.name == "App" { entry.name = resolvedName(distraction) }
+                byToken[token] = entry
+            } else {
+                byName[resolvedName(distraction), default: 0] += duration
+            }
+        }
+
+        let tokenApps = byToken.map { key, value in
+            DistractingApp(id: "token-\(key.hashValue)", token: key, name: value.name, duration: value.duration)
+        }
+        let categoryApps = byName.map { name, duration in
+            DistractingApp(id: "name-\(name)", token: nil, name: name, duration: duration)
+        }
+
+        return (tokenApps + categoryApps)
             .sorted { $0.duration > $1.duration }
             .prefix(3)
             .map { $0 }
+    }
+
+    private func decodeToken(_ data: Data?) -> ApplicationToken? {
+        guard let data else { return nil }
+        return try? JSONDecoder().decode(ApplicationToken.self, from: data)
+    }
+
+    private func resolvedName(_ distraction: Distraction) -> String {
+        if let name = distraction.appDisplayName, !name.isEmpty { return name }
+        return distraction.appOpened.isEmpty ? "App" : distraction.appOpened
+    }
+
+    /// Real app icon from the Screen Time token, with a neutral fallback for
+    /// category-level distractions that have no per-app token.
+    @ViewBuilder
+    private func appIcon(for app: DistractingApp) -> some View {
+        if let token = app.token {
+            Label(token)
+                .labelStyle(.iconOnly)
+                .font(.system(size: 30))
+                .frame(width: 36, height: 36)
+        } else {
+            Image(systemName: "questionmark.app.dashed")
+                .font(.system(size: 30))
+                .foregroundColor(.gray)
+                .frame(width: 36, height: 36)
+        }
+    }
+
+    /// Real app name from the token, falling back to the stored display name.
+    @ViewBuilder
+    private func appName(for app: DistractingApp) -> some View {
+        if let token = app.token {
+            Label(token).labelStyle(.titleOnly)
+        } else {
+            Text(app.name)
+        }
     }
 
     // MARK: - Formatting helpers
@@ -166,6 +281,59 @@ struct WeeklyAnalyticScreen: View {
         String(format: "%.1f minutes", seconds / 60)
     }
 
+    // MARK: - Header
+
+    private var weekPickerBar: some View {
+        ZStack {
+            // Week range pill, centered.
+            HStack(spacing: 12) {
+                Button { changeWeek(by: -1) } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .disabled(!canGoBack)
+                .opacity(canGoBack ? 1 : 0.35)
+
+                Text(weekRangeLabel)
+                    .font(.system(size: 14, weight: .semibold))
+
+                Button { changeWeek(by: 1) } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .disabled(isAtCurrentWeek)
+                .opacity(isAtCurrentWeek ? 0.35 : 1)
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 9)
+            .background(Capsule().fill(Color.black))
+
+            // Back button, leading.
+            HStack {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(.white)
+                }
+                Spacer()
+            }
+        }
+    }
+
+    /// Horizontal swipe to page between weeks (swipe left = next, right = previous).
+    /// Runs simultaneously with the vertical scroll and only fires on a clearly
+    /// horizontal drag, so it doesn't fight scrolling or taps.
+    private var weekSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onEnded { value in
+                let dx = value.translation.width
+                let dy = value.translation.height
+                guard abs(dx) > abs(dy), abs(dx) > 60 else { return }
+                changeWeek(by: dx < 0 ? 1 : -1)
+            }
+    }
+
     var body: some View {
             ZStack{
                 Color("CanvasBlue")
@@ -175,57 +343,22 @@ struct WeeklyAnalyticScreen: View {
                     .ignoresSafeArea()
                     .offset(y: 5)
                 
-                ScrollView{
-                    VStack{
-                        Color.clear
-                            .frame(height: 24)
-                        
-                        HStack{
-                            Text(weekRangeLabel)
-                            Image(systemName: "chevron.down")
-                        }
-                        .foregroundStyle(.white)
+                VStack(spacing: 0) {
+                    weekPickerBar
                         .padding(.horizontal, 24)
-                        .padding(.vertical, 8)
-                        .background(
-                            Capsule()
-                                .fill(.black)
-                                .opacity(0.25)
-                        )
-                        
+                        .padding(.top, 8)
+                        .padding(.bottom, 6)
+
+                    ScrollView(showsIndicators: false) {
+                        VStack{
                         Color.clear
                             .frame(height: 24)
                         
                         VStack{
                             Text("Total Session Time")
                                 .font(.custom("Special Gothic Expanded One", size: 14))
-                            
-                            ZStack{
-                                ZStack {
-                                    ForEach([CGPoint(x: -2, y: -2), CGPoint(x: 0, y: -2), CGPoint(x: 2, y: -2),
-                                             CGPoint(x: -2, y: 0),                         CGPoint(x: 2, y: 0),
-                                             CGPoint(x: -2, y: 2),  CGPoint(x: 0, y: 2),  CGPoint(x: 2, y: 2)], id: \.self) { p in
-                                        Text(totalSessionTimeText)
-                                            .offset(x: p.x, y: p.y)
-                                    }
-                                    Text(totalSessionTimeText)
-                                }
-                                .foregroundColor(.black)
+                            Text(totalSessionTimeText)
                                 .font(.custom("Special Gothic Expanded One", size: 50))
-                                .offset(y: 4)
-                                
-                                ZStack {
-                                    ForEach([CGPoint(x: -2, y: -2), CGPoint(x: 0, y: -2), CGPoint(x: 2, y: -2),
-                                             CGPoint(x: -2, y: 0),                         CGPoint(x: 2, y: 0),
-                                             CGPoint(x: -2, y: 2),  CGPoint(x: 0, y: 2),  CGPoint(x: 2, y: 2)], id: \.self) { p in
-                                        Text(totalSessionTimeText)
-                                            .foregroundColor(.black)
-                                            .offset(x: p.x, y: p.y)
-                                    }
-                                    Text(totalSessionTimeText)
-                                }
-                                .font(.custom("Special Gothic Expanded One", size: 50))
-                            }
                         }
                         .foregroundStyle(.white)
                         
@@ -233,8 +366,14 @@ struct WeeklyAnalyticScreen: View {
                             .frame(height: 24)
                         
                         ZStack(alignment: .top) {
-                            Color.white
-                                .cornerRadius(24)
+                            RoundedRectangle(cornerRadius: 24)
+                                .fill(Color.white)
+                                .overlay(alignment: .top) {
+                                    Image("BlackWhitePattern")
+                                        .resizable()
+                                        .frame(height: 12)
+                                }
+                                .clipShape(RoundedRectangle(cornerRadius: 24))
                                 .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.black, lineWidth: 1))
                                 .padding(.top, 12)
                                 .frame(height: 280)
@@ -282,30 +421,28 @@ struct WeeklyAnalyticScreen: View {
                                         .padding(.vertical, 6)
                                         .offset(y: -76)
                                     
-                                    VStack{
-                                        Image(systemName: "play.fill")
-                                            .foregroundStyle(.black)
-                                    }
-                                    .zIndex(1)
-                                    .frame(width: 48, height: 48)
-                                    .background(
-                                        Circle()
-                                            .fill(.white)
-                                            .shadow(color: .black, radius: 0, x: 0, y: 4)
-                                            .overlay(
-                                                Circle()
-                                                    .stroke(Color.black, lineWidth: 1)
-                                            )
-                                    )
-                                    .offset(y: -32)
+                                    Image(systemName: "play.fill")
+                                        .font(.system(size: 16, weight: .black))
+                                        .foregroundColor(.white)
+                                        .zIndex(1)
+                                        .frame(width: 48, height: 48)
+                                        .background(Circle().fill(Color.black))
+                                        .offset(y: -32)
                                 }
                             }
                         }
                         
-                        CardInput(title: "WHAT YOUR WEEK LOOK LIKE?", backgroundColor: .white) {
-                            BarChartView(data: weekdayBars, config: chartConfig)
-                                .frame(height: 300)
-                                .padding(24)
+                        PatternBorderedCard(edges: [], cornerRadius: 24) {
+                            VStack(spacing: 0) {
+                                Text("WHAT YOUR WEEK LOOKS LIKE?")
+                                    .font(.custom("Special Gothic Expanded One", size: 14))
+                                    .foregroundColor(.black)
+                                    .padding(.top, 20)
+
+                                BarChartView(data: weekdayBars, config: chartConfig)
+                                    .frame(height: 300)
+                                    .padding(24)
+                            }
                         }
                         .padding(.top, 12)
                         
@@ -313,7 +450,7 @@ struct WeeklyAnalyticScreen: View {
                             ZStack{
                                 Color.white
                                     .cornerRadius(24)
-                                    .shadow(color: .black, radius: 0, x: 0, y: 4)
+                                    .shadow(color: .black, radius: 0, x: 0, y: 0)
                                     .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.black, lineWidth: 1))
                                     .padding(.top, 12)
                                     .frame(height: 78)
@@ -332,7 +469,7 @@ struct WeeklyAnalyticScreen: View {
                             ZStack{
                                 Color.white
                                     .cornerRadius(24)
-                                    .shadow(color: .black, radius: 0, x: 0, y: 4)
+                                    .shadow(color: .black, radius: 0, x: 0, y: 0)
                                     .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.black, lineWidth: 1))
                                     .padding(.top, 12)
                                     .frame(height: 78)
@@ -349,43 +486,70 @@ struct WeeklyAnalyticScreen: View {
                             }
                         }
                         
-                        CardInput(title: "MOST DISTRACTING APPS", backgroundColor: .white) {
+                        PatternBorderedCard(edges: [.bottom], cornerRadius: 24) {
                             VStack(spacing: 0) {
-                                if topDistractingApps.isEmpty {
-                                    Text("No distractions this week 🎉")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(.gray)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 32)
-                                } else {
-                                    ForEach(Array(topDistractingApps.enumerated()), id: \.offset) { index, app in
-                                        HStack {
-                                            HStack(spacing: 16) {
-                                                Text("\(index + 1)")
-                                                Image(systemName: "play.fill")
-                                                    .font(.system(size: 32))
-                                                Text(app.name)
-                                                    .font(.custom("Special Gothic Expanded One", size: 15))
-                                            }
-                                            Spacer()
-                                            Text(TimeFormatter.shortDuration(app.duration))
-                                        }
-                                        .padding()
+                                Text("MOST DISTRACTING APPS")
+                                    .font(.custom("Special Gothic Expanded One", size: 14))
+                                    .foregroundColor(.black)
+                                    .padding(.top, 20)
 
-                                        if index < topDistractingApps.count - 1 {
-                                            Divider()
+                                VStack(spacing: 0) {
+                                    if topDistractingApps.isEmpty {
+                                        Text("No distractions this week 🎉")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(.gray)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 32)
+                                    } else {
+                                        ForEach(Array(topDistractingApps.enumerated()), id: \.element.id) { index, app in
+                                            HStack {
+                                                HStack(spacing: 16) {
+                                                    Text("\(index + 1)")
+                                                        .font(.custom("Special Gothic Expanded One", size: 15))
+
+                                                    appIcon(for: app)
+
+                                                    appName(for: app)
+                                                        .font(.custom("Special Gothic Expanded One", size: 15))
+                                                        .foregroundColor(.black)
+                                                        .lineLimit(1)
+                                                }
+                                                Spacer()
+                                                Text(TimeFormatter.shortDuration(app.duration))
+                                            }
+                                            .padding()
+
+                                            if index < topDistractingApps.count - 1 {
+                                                Divider()
+                                            }
                                         }
                                     }
                                 }
+                                .padding()
+                                .padding(.bottom, 12)
                             }
-                            .padding()
                         }
                         .padding(.top, 12)
                     }
                 }
                 .padding(.horizontal, 24)
+                .simultaneousGesture(weekSwipeGesture)
+                }
             }
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationBarBackButtonHidden(true)
+            .hidesFloatingTabBar()
     }
+}
+
+// MARK: - Models
+
+/// One distracting app aggregated for the week.
+private struct DistractingApp: Identifiable {
+    let id: String
+    let token: ApplicationToken?
+    let name: String
+    let duration: TimeInterval
 }
 
 // MARK: - Per-day model
@@ -398,29 +562,29 @@ private struct DayStat {
 }
 
 #Preview {
-    let dummyFrames = ["dummySnapshot1", "dummySnapshot2", "dummySnapshot3"]
-        .compactMap { UIImage(named: $0) }
-
     let calendar = Calendar.current
-    let now = Date()
-    let weekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
-    let sampleSessions: [Session] = (0..<4).map { offset in
-        let start = calendar.date(byAdding: .day, value: offset, to: weekStart) ?? weekStart
-        return Session(
-            userId: UUID(),
-            duration: 3600,
-            startTime: start,
-            endTime: start.addingTimeInterval(TimeInterval(3600 + offset * 600)),
-            title: "Session \(offset + 1)"
+    let weekStart = calendar.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
+
+    let container = try! ModelContainer(
+        for: Session.self, Distraction.self,
+        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+    )
+    // Seed two weeks so the chevrons have somewhere to navigate.
+    for offset in 0..<11 {
+        let start = calendar.date(byAdding: .day, value: -offset, to: weekStart) ?? weekStart
+        container.mainContext.insert(
+            Session(
+                userId: UUID(),
+                duration: 3600,
+                startTime: start,
+                endTime: start.addingTimeInterval(TimeInterval(3600 + offset * 600)),
+                title: "Session \(offset + 1)"
+            )
         )
     }
 
     return NavigationStack {
-        WeeklyAnalyticScreen(
-            sessions: sampleSessions,
-            weekStart: weekStart,
-            videoFrames: dummyFrames
-        )
+        WeeklyAnalyticScreen(weekStart: weekStart)
     }
-    .modelContainer(for: [Session.self, Distraction.self], inMemory: true)
+    .modelContainer(container)
 }

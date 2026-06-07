@@ -99,14 +99,14 @@ struct MonitorScreen: View {
         HStack {
             Button(action: {}) {
                 Image(systemName: "gearshape.fill")
-                    .font(.system(size: 24))
+                    .font(.system(size: 19))
                     .foregroundColor(.white)
             }
 
             Spacer()
 
-            Text("Monitor")
-                .font(.system(size: 22, weight: .heavy))
+            Text("My Sessions")
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(.white)
 
             Spacer()
@@ -115,7 +115,7 @@ struct MonitorScreen: View {
                 showSearch = true
             } label: {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 24, weight: .bold))
+                    .font(.system(size: 19, weight: .bold))
                     .foregroundColor(.white)
             }
         }
@@ -158,7 +158,7 @@ struct MonitorScreen: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, 40)
+            .padding(.bottom, 110)
         }
     }
 
@@ -171,10 +171,10 @@ struct MonitorScreen: View {
                 .font(.system(size: 36))
                 .foregroundColor(.white.opacity(0.7))
             Text("No sessions yet")
-                .font(.system(size: 16, weight: .bold))
+                .font(.custom("Special Gothic Expanded One", size: 23))
                 .foregroundColor(.white)
-            Text("Your focus sessions will show up here.")
-                .font(.system(size: 13))
+            Text("Complete a Rush Hour session to save your \ntimelapses and reviews here.")
+                .font(.system(size: 16, weight: .medium))
                 .foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
             Spacer()
@@ -245,76 +245,80 @@ struct WeekCard: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
-            Button {
-                guard !week.isCurrent else { return }
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    userExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "play.circle.fill")
-                        .font(.system(size: 26))
-                        .foregroundColor(.white)
-
-                    Text(week.title)
-                        .font(.system(size: 18, weight: .black))
-                        .foregroundColor(.white)
-
-                    Spacer()
-
-                    Text(TimeFormatter.shortDuration(week.totalDuration))
-                        .font(.system(size: 14, weight: .black))
-                        .foregroundColor(.white)
-
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white)
-                }
-            }
-            .buttonStyle(.plain)
-
-            if isExpanded {
-                ForEach(week.sessions) { session in
-                    NavigationLink {
-                        SessionAnalytics(
-                            sessionId: session.id,
-                            videoFrames: session.snapshotImages.compactMap { UIImage(data: $0) }
-                        )
-                    } label: {
-                        SessionRow(session: session)
-                    }
-                    .buttonStyle(.plain)
-                }
-
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                // The "Week N" pill opens the weekly analytics.
                 NavigationLink {
-                    WeeklyAnalyticScreen(
-                        sessions: week.sessions,
-                        weekStart: week.id,
-                        videoFrames: week.snapshotFrames
-                    )
+                    WeeklyAnalyticScreen(weekStart: week.id)
                 } label: {
-                    Text("VIEW WEEKLY REWIND")
-                        .font(.system(size: 14, weight: .heavy))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Capsule().fill(Color.black))
+                    HStack(spacing: 6) {
+                        Text(week.title)
+                            .font(.system(size: 14, weight: .heavy))
+                        Image(systemName: "chart.bar.xaxis")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(Capsule().fill(Color.black))
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                // Duration + chevron toggles expand/collapse.
+                Button {
+                    guard !week.isCurrent else { return }
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        userExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        Text(TimeFormatter.shortDuration(week.totalDuration))
+                            .font(.system(size: 15, weight: .heavy))
+                            .foregroundColor(.black)
+
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.black)
+                    }
                 }
                 .buttonStyle(.plain)
             }
+            .padding(16)
+
+            if isExpanded {
+                ForEach(week.sessions) { session in
+                    rowDivider
+
+                    NavigationLink {
+                        // No live capture frames here; SessionAnalytics pulls a
+                        // poster frame from the saved wrapped video instead of
+                        // showing an activity snapshot.
+                        SessionAnalytics(sessionId: session.id)
+                    } label: {
+                        SessionRow(session: session, showsCard: false)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
         }
-        .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 24)
-                .fill(Color(red: 0.20, green: 0.50, blue: 0.93))
-                // Neo-brutalist solid shadow
-                .background(
+                .fill(Color.white)
+                .overlay(
                     RoundedRectangle(cornerRadius: 24)
-                        .fill(Color.black)
-                        .offset(y: 5)
+                        .stroke(Color.black, lineWidth: 2)
                 )
         )
+    }
+
+    /// Hairline separator between the header and each session row.
+    private var rowDivider: some View {
+        Rectangle()
+            .fill(Color.black.opacity(0.08))
+            .frame(height: 1)
+            .padding(.horizontal, 16)
     }
 }
 
@@ -325,17 +329,21 @@ struct MonthHeader: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 12, weight: .heavy))
+            .font(.custom("Special Gothic Expanded One", size: 24))
             .foregroundColor(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(Capsule().fill(Color.black))
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 8)
     }
 }
 
 struct SessionRow: View {
     let session: Session
+    /// When false the row is rendered bare (no white card / shadow) so it can sit
+    /// inside the Week card with divider lines. Search keeps the standalone card.
+    var showsCard: Bool = true
+    /// Poster frame extracted from the saved wrapped video (a real session frame,
+    /// not a user-uploaded activity snapshot).
+    @State private var posterFrame: UIImage?
 
     private var monthText: String {
         let formatter = DateFormatter()
@@ -351,11 +359,17 @@ struct SessionRow: View {
         session.title.isEmpty ? "Untitled Session" : session.title
     }
 
-    private var thumbnail: Image? {
-        if let data = session.snapshotImages.first, let uiImage = UIImage(data: data) {
-            return Image(uiImage: uiImage)
+    /// Extracts a poster frame from the saved wrapped video off the main thread.
+    private func loadPosterFrame() async {
+        guard posterFrame == nil, let path = session.wrappedVideoPath else { return }
+        let url = URL(fileURLWithPath: path)
+        let frame = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let image = SessionRecordingViewModel.extractPreviewFrames(from: url, count: 1).first
+                continuation.resume(returning: image)
+            }
         }
-        return nil
+        posterFrame = frame
     }
 
     var body: some View {
@@ -371,10 +385,10 @@ struct SessionRow: View {
             }
             .frame(width: 40)
 
-            // Thumbnail (real snapshot if captured, otherwise a placeholder)
+            // Thumbnail: a real frame from the session video, otherwise a placeholder.
             Group {
-                if let thumbnail {
-                    thumbnail
+                if let posterFrame {
+                    Image(uiImage: posterFrame)
                         .resizable()
                         .scaledToFill()
                 } else {
@@ -388,6 +402,7 @@ struct SessionRow: View {
             }
             .frame(width: 50, height: 50)
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .task(id: session.id) { await loadPosterFrame() }
 
             // Text content
             VStack(alignment: .leading, spacing: 4) {
@@ -408,7 +423,12 @@ struct SessionRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 16)
-        .background(
+        .background(cardBackground)
+    }
+
+    @ViewBuilder
+    private var cardBackground: some View {
+        if showsCard {
             RoundedRectangle(cornerRadius: 20)
                 .fill(Color.white)
                 // Neo-brutalist solid shadow
@@ -417,7 +437,7 @@ struct SessionRow: View {
                         .fill(Color.black)
                         .offset(y: 4)
                 )
-        )
+        }
     }
 }
 
@@ -428,27 +448,23 @@ struct RewindRow: View {
     var body: some View {
         HStack(spacing: 16) {
             // Play Icon
-            Image(systemName: "play.fill")
-                .font(.system(size: 16, weight: .black))
-                .foregroundColor(.black)
-                .padding(10)
-                .background(Circle().fill(Color.white))
-                .overlay(Circle().stroke(Color.black, lineWidth: 2))
+            Image(systemName: "play.circle")
+                .font(.system(size: 32, weight: .heavy))
+                .foregroundColor(.white)
+                .padding(4)
+//                .background(Circle().fill(Color.white))
+//                .overlay(Circle().stroke(Color.black, lineWidth: 2))
 
             // Title with outline effect (stacked shadows mimic a hard black stroke)
             Text(title)
-                .font(.system(size: 22, weight: .black))
+                .font(.custom("Special Gothic Expanded One", size: 20))
                 .foregroundColor(.white)
-                .shadow(color: .black, radius: 0.5, x: 1, y: 1)
-                .shadow(color: .black, radius: 0.5, x: -1, y: -1)
-                .shadow(color: .black, radius: 0.5, x: -1, y: 1)
-                .shadow(color: .black, radius: 0.5, x: 1, y: -1)
 
             Spacer()
 
             Text(duration)
-                .font(.system(size: 12, weight: .black))
-                .foregroundColor(.black)
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundColor(.white)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 16)
@@ -460,11 +476,6 @@ struct RewindRow: View {
                         startPoint: .leading,
                         endPoint: .trailing
                     )
-                )
-                .background(
-                    RoundedRectangle(cornerRadius: 20)
-                        .fill(Color.black)
-                        .offset(y: 4)
                 )
         )
     }
