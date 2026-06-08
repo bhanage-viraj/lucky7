@@ -118,7 +118,6 @@ final class SessionRecordingViewModel: ObservableObject {
 
         isRecording = false
         isExporting = true
-        // Stay awake while exporting the timelapse after early end or timer finish.
         ScreenWakeLock.setActive(true)
         statusMessage = "Saving your session video…"
 
@@ -204,7 +203,6 @@ final class SessionRecordingViewModel: ObservableObject {
         return AppConstants.wrappedDurationSeconds(frameCount: timelapseManager.lastCapturedFrameCount)
     }
 
-    // MARK: - Private
 
     private func saveToPhotosIfPossible(videoURL: URL) async {
         do {

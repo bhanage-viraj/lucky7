@@ -1,6 +1,9 @@
-// ViewModels/DistractionViewModel.swift
-// Placeholder for DistractionViewModel
-
+//
+//  DistractionViewModel.swift
+//  lucky7
+//
+//  Created by Andrian on 31/05/26.
+//
 import Foundation
 import Combine
 import SwiftData
