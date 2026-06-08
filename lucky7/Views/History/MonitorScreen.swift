@@ -7,7 +7,9 @@ import SwiftUI
 import SwiftData
 
 struct MonitorScreen: View {
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Session.startTime, order: .reverse) private var sessions: [Session]
+    @Query private var periodWraps: [PeriodWrap]
     @State private var showSearch = false
 
     /// Sessions grouped by calendar month (newest first), each month split into real
@@ -91,6 +93,10 @@ struct MonitorScreen: View {
                 SessionSearchView()
             }
         }
+        .task {
+            // Keep recaps fresh when viewing history (no-op when nothing's due).
+            await WrapRollupService.rollUpIfNeeded(context: modelContext)
+        }
     }
 
     // MARK: - Header
@@ -132,11 +138,14 @@ struct MonitorScreen: View {
                 ForEach(monthGroups) { month in
                     MonthHeader(title: month.title)
 
-                    // The month wrap is only available once the month is complete.
-                    if !month.isCurrentMonth && month.totalDuration > 0 {
+                    // The monthly rewind only appears once its recap has actually been
+                    // generated (so the current, in-progress month shows no button).
+                    if periodWraps.contains(where: { $0.kind == "monthly" && $0.periodKey == month.periodKey }) {
                         NavigationLink {
                             WrappedVideoScreen(
                                 kind: .monthly(
+                                    periodKey: month.periodKey,
+                                    periodEnd: month.periodEnd,
                                     title: "\(month.rewindName) Rewind",
                                     periodLabel: month.title,
                                     duration: month.totalDuration
@@ -205,6 +214,9 @@ struct MonthGroup: Identifiable {
         formatter.dateFormat = "MMMM"
         return formatter.string(from: id)
     }
+
+    var periodKey: String { WrapStorage.monthKey(for: id) }
+    var periodEnd: Date { Calendar.current.dateInterval(of: .month, for: id)?.end ?? id }
 
     /// Decoded snapshots from every session in the month, used as wrap preview frames.
     var snapshotFrames: [UIImage] {
@@ -486,7 +498,7 @@ struct RewindRow: View {
 @MainActor
 func sampleMonitorContainer() -> ModelContainer {
     let container = try! ModelContainer(
-        for: Session.self,
+        for: Session.self, PeriodWrap.self,
         configurations: ModelConfiguration(isStoredInMemoryOnly: true)
     )
     let context = container.mainContext

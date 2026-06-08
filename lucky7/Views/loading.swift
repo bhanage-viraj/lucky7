@@ -41,7 +41,7 @@ struct Loading: View {
                 ZStack(alignment: .bottom) {
                     // Both screens stay alive so each keeps its own navigation
                     // stack and scroll state; only the selected one is shown.
-                    HomePage()
+                    HomePage(isActiveTab: selectedTab == 0)
                         .opacity(selectedTab == 0 ? 1 : 0)
                         .allowsHitTesting(selectedTab == 0)
                         .zIndex(selectedTab == 0 ? 1 : 0)

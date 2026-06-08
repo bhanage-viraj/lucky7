@@ -67,6 +67,9 @@ struct FinishSessionScreen: View {
         .onChange(of: sessionRecording.finalVideoURL) { _, url in
             persistWrappedVideoPath(url)
         }
+        .onChange(of: sessionRecording.rawClipURL) { _, url in
+            persistRawClipPath(url)
+        }
     }
 
     private func persistWrappedVideoPath(_ url: URL?) {
@@ -75,6 +78,16 @@ struct FinishSessionScreen: View {
         descriptor.fetchLimit = 1
         if let session = try? context.fetch(descriptor).first {
             session.wrappedVideoPath = path
+            try? context.save()
+        }
+    }
+
+    private func persistRawClipPath(_ url: URL?) {
+        guard let sessionId, let path = url?.path else { return }
+        var descriptor = FetchDescriptor<Session>(predicate: #Predicate { $0.id == sessionId })
+        descriptor.fetchLimit = 1
+        if let session = try? context.fetch(descriptor).first {
+            session.rawClipPath = path
             try? context.save()
         }
     }
@@ -163,7 +176,8 @@ struct FinishSessionScreen: View {
             duration: duration,
             startTime: endTime.addingTimeInterval(-duration),
             endTime: endTime,
-            wrappedVideoPath: sessionRecording.finalVideoURL?.path
+            wrappedVideoPath: sessionRecording.finalVideoURL?.path,
+            rawClipPath: sessionRecording.rawClipURL?.path
         )
         context.insert(session)
         sessionId = id

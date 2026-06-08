@@ -13,6 +13,8 @@ final class SessionRecordingViewModel: ObservableObject {
     @Published var isRecording = false
     @Published var isExporting = false
     @Published var finalVideoURL: URL?
+    /// Persistent text-free slice for weekly/monthly recaps (set after export completes).
+    @Published var rawClipURL: URL?
     @Published var previewFrames: [UIImage] = []
     @Published var cameraReady = false
     @Published var permissionDenied = false
@@ -26,6 +28,9 @@ final class SessionRecordingViewModel: ObservableObject {
     private var recordedWallClockSeconds: TimeInterval = 0
     private var didCaptureThisSession = false
     private var exportCompletions: [() -> Void] = []
+    // Kept until the user titles the session, so the wrap can be re-rendered with the title.
+    private var retainedRawURL: URL?
+    private var lastExportFrameCount: Int = 0
 
     var captureSession: AVCaptureSession {
         timelapseManager.captureSession
@@ -163,8 +168,24 @@ final class SessionRecordingViewModel: ObservableObject {
                         self.previewFrames = Self.extractPreviewFrames(from: finalURL, count: 3)
                         self.didCaptureThisSession = false
                         self.statusMessage = "Video saved"
+                        self.lastExportFrameCount = result.frameCount
+                        // Keep the raw so the wrap can be re-rendered with the title later
+                        // (and so the Photos copy is the titled one — see reexportWithTitle).
+                        self.retainedRawURL = rawURL
 
-                        await self.saveToPhotosIfPossible(videoURL: finalURL)
+                        // Persist a short text-free slice for weekly/monthly recaps.
+                        let sliceURL = WrapStorage.newSessionSliceURL()
+                        Task { [weak self] in
+                            let ok = await ExportEngine.shared.generateCleanSlice(
+                                rawVideoURL: rawURL,
+                                sliceSeconds: WrapRollupService.sliceSeconds,
+                                outputURL: sliceURL
+                            )
+                            await MainActor.run {
+                                if ok { self?.rawClipURL = sliceURL }
+                            }
+                        }
+
                         self.finishExportCompletions()
                     }
                 }
@@ -184,6 +205,10 @@ final class SessionRecordingViewModel: ObservableObject {
         isRecording = false
         isExporting = false
         finalVideoURL = nil
+        rawClipURL = nil
+        if let raw = retainedRawURL { try? FileManager.default.removeItem(at: raw) }
+        retainedRawURL = nil
+        lastExportFrameCount = 0
         previewFrames = []
         lastError = nil
         savedToPhotos = false
@@ -239,7 +264,7 @@ final class SessionRecordingViewModel: ObservableObject {
         return images
     }
 
-    private func makeOverlay(frameCount: Int) -> ExportEngine.WrappedVideoOverlay {
+    private func makeOverlay(frameCount: Int, title: String = "Untitled session") -> ExportEngine.WrappedVideoOverlay {
         // Duration based on frames @ 60fps.
         let seconds = AppConstants.wrappedDurationSeconds(frameCount: frameCount)
         let total = max(Int(seconds.rounded()), 1)
@@ -247,30 +272,39 @@ final class SessionRecordingViewModel: ObservableObject {
         let secs = total % 60
         let durationCompact = mins > 0 ? "\(mins)m" : "\(secs)s"
 
-        // Time range and date based on wall-clock end time.
-        let end = Date()
-        let wall = recordedWallClockSeconds > 0 ? recordedWallClockSeconds : seconds
-        let start = end.addingTimeInterval(-wall)
-
-        let timeFormatter = DateFormatter()
-        timeFormatter.locale = .current
-        timeFormatter.dateFormat = "HH:mm"
-
         let dateFormatter = DateFormatter()
         dateFormatter.locale = .current
         dateFormatter.dateFormat = "d MMM yyyy"
-
-        let range = "\(timeFormatter.string(from: start))–\(timeFormatter.string(from: end))"
-        let date = dateFormatter.string(from: end)
-
-        // Title: if user hasn't saved a title yet, fallback.
-        let title = "Untitled session"
+        let date = dateFormatter.string(from: Date())
 
         return ExportEngine.WrappedVideoOverlay(
             titleTop: title,
             durationCenter: durationCompact,
             dateCenter: date,
-            footer: "RUSH HOUR • \(range)"
+            footer: title.isEmpty ? "Untitled session" : title
         )
+    }
+
+    /// Re-renders the session wrap with the user's title (entered after the first export)
+    /// and saves the titled version to Photos.
+    func reexportWithTitle(_ title: String) {
+        guard let raw = retainedRawURL else { return }
+        retainedRawURL = nil
+        isExporting = true
+        exportEngine.generateWrappedVideo(
+            rawVideoURL: raw,
+            capturedFrameCount: lastExportFrameCount,
+            overlay: makeOverlay(frameCount: lastExportFrameCount, title: title)
+        ) { [weak self] finalURL in
+            Task { @MainActor in
+                guard let self else { return }
+                self.isExporting = false
+                if let finalURL {
+                    self.finalVideoURL = finalURL
+                    await self.saveToPhotosIfPossible(videoURL: finalURL)
+                }
+                try? FileManager.default.removeItem(at: raw)
+            }
+        }
     }
 }

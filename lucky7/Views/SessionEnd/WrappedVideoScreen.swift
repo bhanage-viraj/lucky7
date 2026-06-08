@@ -16,28 +16,58 @@ struct WrappedVideoScreen: View {
     @EnvironmentObject private var sessionRecording: SessionRecordingViewModel
 
     @Query private var sessions: [Session]
+    @Query private var periodWraps: [PeriodWrap]
     @State private var player: AVPlayer?
     @State private var isPlaying = true
+    @State private var didFinish = false
 
     init(kind: Kind, videoFrames: [UIImage] = []) {
         self.kind = kind
         self.videoFrames = videoFrames
-        // Only the session wrap is backed by a real record. Weekly/monthly wraps
-        // aren't generated yet, so their query intentionally matches nothing.
+        // Session wraps are backed by a `Session`; weekly/monthly by a `PeriodWrap`.
         let sessionId: UUID
         if case .session(let id) = kind { sessionId = id } else { sessionId = UUID() }
         _sessions = Query(filter: #Predicate<Session> { $0.id == sessionId })
+
+        let key: String
+        let kindStr: String
+        switch kind {
+        case .session:
+            key = ""; kindStr = ""
+        case .weekly(let k, _, _, _, _):
+            key = k; kindStr = "weekly"
+        case .monthly(let k, _, _, _, _):
+            key = k; kindStr = "monthly"
+        }
+        _periodWraps = Query(filter: #Predicate<PeriodWrap> { $0.periodKey == key && $0.kind == kindStr })
     }
 
     // MARK: - Derived data
 
     private var session: Session? { sessions.first }
+    private var periodWrap: PeriodWrap? { periodWraps.first }
 
-    /// Weekly and monthly wraps don't have generated videos yet, so they show a
-    /// "coming soon" placeholder rather than a playable timelapse.
     private var isWrapReady: Bool {
-        if case .session = kind { return true }
-        return false
+        switch kind {
+        case .session: return true
+        case .weekly, .monthly: return videoURL != nil
+        }
+    }
+
+    /// Non-nil when a weekly/monthly wrap can't be shown yet — drives the warning modal.
+    private var notReadyMessage: String? {
+        switch kind {
+        case .session:
+            return nil
+        case .weekly(_, let end, _, _, _):
+            if Date() < end { return "Your weekly rewind will be ready once this week ends." }
+            if periodWrap == nil { return "Your weekly rewind is still being put together — check back soon." }
+            return nil
+        case .monthly(_, let end, _, _, _):
+            if Date() < end { return "Your monthly rewind will be ready once this month ends." }
+            if periodWrap == nil { return "Your monthly rewind is still being put together — check back soon." }
+            return nil
+        }
     }
 
     private var displayTitle: String {
@@ -45,7 +75,7 @@ struct WrappedVideoScreen: View {
         case .session:
             let t = session?.title ?? ""
             return t.isEmpty ? "Untitled session" : t
-        case .weekly(let title, _, _), .monthly(let title, _, _):
+        case .weekly(_, _, let title, _, _), .monthly(_, _, let title, _, _):
             return title
         }
     }
@@ -62,7 +92,7 @@ struct WrappedVideoScreen: View {
         switch kind {
         case .session:
             return formatDuration(session?.actualDuration ?? 0)
-        case .weekly(_, _, let duration), .monthly(_, _, let duration):
+        case .weekly(_, _, _, _, let duration), .monthly(_, _, _, _, let duration):
             return formatDuration(duration)
         }
     }
@@ -74,16 +104,20 @@ struct WrappedVideoScreen: View {
             return start
                 .formatted(.dateTime.day().month(.abbreviated).year())
                 .uppercased()
-        case .weekly(_, let periodLabel, _), .monthly(_, let periodLabel, _):
+        case .weekly(_, _, _, let periodLabel, _), .monthly(_, _, _, let periodLabel, _):
             return periodLabel.uppercased()
         }
     }
 
     private var videoURL: URL? {
-        if let path = session?.wrappedVideoPath {
-            return URL(fileURLWithPath: path)
+        switch kind {
+        case .session:
+            if let path = session?.wrappedVideoPath { return URL(fileURLWithPath: path) }
+            return sessionRecording.finalVideoURL
+        case .weekly, .monthly:
+            if let path = periodWrap?.videoPath { return URL(fileURLWithPath: path) }
+            return nil
         }
-        return sessionRecording.finalVideoURL
     }
 
     private var shareableVideoURL: URL? { videoURL }
@@ -126,6 +160,15 @@ struct WrappedVideoScreen: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .hidesFloatingTabBar()
+        .overlay {
+            if let message = notReadyMessage {
+                WrapNotReadyModal(
+                    title: "Not ready yet",
+                    message: message,
+                    onDismiss: { dismiss() }
+                )
+            }
+        }
         .onAppear {
             if let videoURL {
                 player = AVPlayer(url: videoURL)
@@ -135,6 +178,11 @@ struct WrappedVideoScreen: View {
         .onDisappear {
             player?.pause()
             player = nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AVPlayerItem.didPlayToEndTimeNotification)) { note in
+            guard let item = note.object as? AVPlayerItem, item === player?.currentItem else { return }
+            isPlaying = false
+            didFinish = true
         }
     }
 
@@ -218,7 +266,7 @@ struct WrappedVideoScreen: View {
 
     private var playPauseButton: some View {
         Button(action: togglePlayback) {
-            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+            Image(systemName: didFinish ? "arrow.counterclockwise" : (isPlaying ? "pause.fill" : "play.fill"))
                 .font(.system(size: 24, weight: .black))
                 .foregroundColor(.white)
                 .frame(width: 64, height: 64)
@@ -234,12 +282,20 @@ extension WrappedVideoScreen {
     /// data today; `.weekly` and `.monthly` carry display info but show a placeholder.
     enum Kind {
         case session(UUID)
-        case weekly(title: String, periodLabel: String, duration: TimeInterval)
-        case monthly(title: String, periodLabel: String, duration: TimeInterval)
+        case weekly(periodKey: String, periodEnd: Date, title: String, periodLabel: String, duration: TimeInterval)
+        case monthly(periodKey: String, periodEnd: Date, title: String, periodLabel: String, duration: TimeInterval)
     }
 
     private func togglePlayback() {
         guard let player else { return }
+        // Finished → restart from the beginning.
+        if didFinish {
+            player.seek(to: .zero)
+            player.play()
+            isPlaying = true
+            didFinish = false
+            return
+        }
         if isPlaying {
             player.pause()
         } else {
@@ -249,8 +305,72 @@ extension WrappedVideoScreen {
     }
 }
 
+// MARK: - "Not ready yet" warning (EndSession-style bottom sheet)
+
+private struct WrapNotReadyModal: View {
+    let title: String
+    let message: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .onTapGesture(perform: onDismiss)
+
+            VStack(spacing: 0) {
+                Capsule()
+                    .fill(Color.black.opacity(0.18))
+                    .frame(width: 38, height: 5)
+                    .padding(.top, 10)
+
+                HStack {
+                    Spacer()
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Color.black.opacity(0.55))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 6)
+
+                Text(title)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(.black)
+                    .padding(.top, 2)
+
+                Text(message)
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color.black.opacity(0.5))
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 10)
+                    .padding(.horizontal, 8)
+
+                Button(action: onDismiss) {
+                    Text("GOT IT")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(Color.black, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 20)
+                .padding(.top, 22)
+                .padding(.bottom, 22)
+            }
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .padding(.horizontal, 20)
+            .padding(.bottom, 28)
+            .shadow(color: .black.opacity(0.2), radius: 20, y: 8)
+        }
+    }
+}
+
 #Preview {
     WrappedVideoScreen(kind: .session(UUID()), videoFrames: [])
         .environmentObject(SessionRecordingViewModel())
-        .modelContainer(for: Session.self, inMemory: true)
+        .modelContainer(for: [Session.self, PeriodWrap.self], inMemory: true)
 }

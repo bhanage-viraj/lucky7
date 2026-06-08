@@ -183,11 +183,13 @@ struct SessionDetails: View {
                                         uploadedSnapshots.remove(at: index)
                                     } label: {
                                         Image(systemName: "xmark.circle.fill")
-                                            .font(.system(size: 18))
+                                            .font(.system(size: 20))
                                             .symbolRenderingMode(.palette)
                                             .foregroundStyle(.white, .black)
+                                            .frame(width: 36, height: 36)   // big enough tap target
+                                            .contentShape(Rectangle())
                                     }
-                                    .padding(4)
+                                    .buttonStyle(.plain)
                                 }
                         }
 
@@ -254,7 +256,7 @@ struct SessionDetails: View {
         Button(action: saveSession) {
             Text("SAVE")
                 .font(.custom("Special Gothic Expanded One", size: 16))
-                .foregroundColor(.white.opacity(0.7))
+                .foregroundColor(.white.opacity(canSave ? 1 : 0.55))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
                 .background(canSave ? saveButtonColor : saveButtonColor.opacity(0.5))
@@ -274,8 +276,15 @@ struct SessionDetails: View {
             if let path = sessionRecording.finalVideoURL?.path {
                 session.wrappedVideoPath = path
             }
+            if let rawPath = sessionRecording.rawClipURL?.path {
+                session.rawClipPath = rawPath
+            }
             try? context.save()
         }
+        // Re-render the wrap with the chosen title (the first export ran before the title
+        // existed). FinishSessionScreen's finalVideoURL observer then updates wrappedVideoPath.
+        let trimmed = sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        sessionRecording.reexportWithTitle(trimmed.isEmpty ? "Untitled session" : trimmed)
         onSave?()
     }
 }

@@ -24,18 +24,19 @@ final class SessionTimerViewModel: ObservableObject {
         return max(configuredTotalSeconds - remaining, 0)
     }
 
-    func configure(hours: Int, minutes: Int) {
+    func configure(hours: Int, minutes: Int, seconds: Int = 0) {
         pause()
         showFinishSession = false
         sessionId = UUID()   // fresh id for this session
 
         let clampedHours = min(max(hours, 0), 23)
-        let clampedMinutes = min(max(minutes, 1), 59)
+        let clampedMinutes = min(max(minutes, 0), 59)
+        let clampedSeconds = min(max(seconds, 0), 59)
 
         self.hours = clampedHours
         self.minutes = clampedMinutes
-        seconds = 0
-        totalSeconds = (clampedHours * 3600) + (clampedMinutes * 60)
+        self.seconds = clampedSeconds
+        totalSeconds = (clampedHours * 3600) + (clampedMinutes * 60) + clampedSeconds
         configuredTotalSeconds = totalSeconds
     }
 
@@ -81,7 +82,7 @@ final class SessionTimerViewModel: ObservableObject {
 
         totalSeconds -= 1
 
-        if totalSeconds < 60 {
+        if totalSeconds <= 0 {
             finish()
         } else {
             updateDisplay()

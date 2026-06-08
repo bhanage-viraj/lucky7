@@ -136,7 +136,7 @@ struct FullFocusScreen: View {
                     
                     HStack{
                         Button(action: {
-                            showEndSessionSheet = true
+                            withAnimation(.easeInOut(duration: 0.2)) { showEndSessionSheet = true }
                         }) {
                             ZStack {
                                 Circle()
@@ -147,22 +147,7 @@ struct FullFocusScreen: View {
                                     .frame(width: 20, height: 20)
                             }
                         }
-                        .sheet(isPresented: $showEndSessionSheet) {
-                            EndSessionSheet(
-                                onEnd: {
-                                    showEndSessionSheet = false
-                                    endSessionFromFullFocus()
-                                },
-                                onCancel: {
-                                    showEndSessionSheet = false
-                                }
-                            )
-                            .presentationDetents([.height(220)])
-                            .presentationDragIndicator(.visible)
-                            .presentationCornerRadius(24)
-                            .presentationBackground(.white)
-                        }
-                        
+
                         Spacer()
 
                         Button(action: {
@@ -198,6 +183,20 @@ struct FullFocusScreen: View {
                     Color.clear
                         .frame(height: 16)
                 }
+            }
+        }
+        .overlay {
+            if showEndSessionSheet {
+                EndSessionConfirm(
+                    onEnd: {
+                        showEndSessionSheet = false
+                        endSessionFromFullFocus()
+                    },
+                    onCancel: {
+                        withAnimation(.easeInOut(duration: 0.2)) { showEndSessionSheet = false }
+                    }
+                )
+                .transition(.opacity)
             }
         }
         .onChange(of: countdown.showFinishSession) { _, show in
@@ -368,68 +367,3 @@ class FocusCameraManager: ObservableObject {
     }
 }
 
-// MARK: - End Session Sheet
-struct EndSessionSheet: View {
-    var onEnd: () -> Void
-    var onCancel: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack {
-                Spacer()
-                Button {
-                    onCancel()
-                } label: {
-                    Image(systemName: "xmark")
-                        .foregroundStyle(.black)
-                        .padding(8)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            
-            // Title & Subtitle
-            Text("End Session")
-                .font(.title2.bold())
-                .padding(.bottom, 8)
-            
-            Text("Ending now will stop recording\nand end your session early")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.bottom, 24)
-            
-            // Buttons
-            HStack(spacing: 12) {
-                // END button
-                Button(action: onEnd) {
-                    Text("END")
-                        .font(.headline)
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(
-                            Capsule()
-                                .stroke(.red, lineWidth: 1.5)
-                        )
-                }
-                
-                // CANCEL button
-                Button(action: onCancel) {
-                    Text("CANCEL")
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(
-                            Capsule()
-                                .fill(.black)
-                        )
-                }
-            }
-            .padding(.horizontal, 20)
-        }
-        .padding(.bottom, 8)
-    }
-}

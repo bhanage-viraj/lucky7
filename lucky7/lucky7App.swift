@@ -17,6 +17,14 @@ struct lucky7App: App {
     @StateObject private var sessionTimer = SessionTimerViewModel()
     @StateObject private var sessionRecording = SessionRecordingViewModel()
 
+    private let container: ModelContainer = {
+        do {
+            return try ModelContainer(for: Session.self, Distraction.self, PeriodWrap.self)
+        } catch {
+            fatalError("Failed to create ModelContainer: \(error)")
+        }
+    }()
+
     var body: some Scene {
         WindowGroup {
             Loading()
@@ -26,8 +34,12 @@ struct lucky7App: App {
                 .task {
                     await NotificationPermission.requestIfNeeded()
                 }
+                .task {
+                    // Roll completed weeks/months into recap videos and prune old slices.
+                    await WrapRollupService.rollUpIfNeeded(context: container.mainContext)
+                }
         }
-        .modelContainer(for: [Session.self, Distraction.self])
+        .modelContainer(container)
     }
 }
 

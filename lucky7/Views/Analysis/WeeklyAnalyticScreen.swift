@@ -32,6 +32,11 @@ struct WeeklyAnalyticScreen: View {
         calendar.date(byAdding: .day, value: weekOffset * 7, to: weekStart) ?? weekStart
     }
 
+    private var weekPeriodKey: String { WrapStorage.weekKey(for: currentWeekStart, calendar: calendar) }
+    private var weekPeriodEnd: Date {
+        calendar.dateInterval(of: .weekOfYear, for: currentWeekStart)?.end ?? currentWeekStart
+    }
+
     /// Sessions that fall inside the displayed week. Uses the same week interval
     /// the history screen groups by, so a session can't slip through a boundary.
     private var sessions: [Session] {
@@ -408,6 +413,8 @@ struct WeeklyAnalyticScreen: View {
                             
                             NavigationLink(destination: WrappedVideoScreen(
                                 kind: .weekly(
+                                    periodKey: weekPeriodKey,
+                                    periodEnd: weekPeriodEnd,
                                     title: "Weekly Rewind",
                                     periodLabel: weekRangeLabel,
                                     duration: weekTotalDuration

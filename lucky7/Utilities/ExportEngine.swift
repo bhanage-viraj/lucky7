@@ -131,6 +131,128 @@ final class ExportEngine {
         }
     }
 
+    // MARK: - Period recaps (weekly / monthly)
+
+    /// Produces a short, TEXT-FREE, portrait-normalised (1080×1920) slice of a raw
+    /// timelapse — the durable per-session source for weekly/monthly recaps.
+    func generateCleanSlice(rawVideoURL: URL, sliceSeconds: Double, outputURL: URL) async -> Bool {
+        let asset = AVURLAsset(url: rawVideoURL)
+        do {
+            let duration = try await asset.load(.duration)
+            let totalSeconds = CMTimeGetSeconds(duration)
+            guard totalSeconds > 0 else { return false }
+
+            let slice = min(sliceSeconds, totalSeconds)
+            let startSeconds = max(0, (totalSeconds - slice) / 2)   // centered
+            let timeRange = CMTimeRange(
+                start: CMTime(seconds: startSeconds, preferredTimescale: 600),
+                duration: CMTime(seconds: slice, preferredTimescale: 600)
+            )
+
+            guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else { return false }
+
+            let composition = AVMutableComposition()
+            guard let compTrack = composition.addMutableTrack(
+                withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid
+            ) else { return false }
+            try compTrack.insertTimeRange(timeRange, of: videoTrack, at: .zero)
+            compTrack.preferredTransform = try await videoTrack.load(.preferredTransform)
+
+            let videoComposition = try await makePortraitVideoComposition(
+                for: composition, sourceVideoTrack: videoTrack, overlay: nil
+            )
+
+            return await export(composition: composition, videoComposition: videoComposition, to: outputURL)
+        } catch {
+            print("ExportEngine.generateCleanSlice: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    /// Concatenates the (already 1080×1920, text-free, 60 fps) per-session slices into one
+    /// video and burns a single period-level overlay (total focus time / period label /
+    /// footer). Each clip is trimmed so the whole recap never exceeds `maxDurationSeconds`.
+    func generatePeriodWrap(
+        clipURLs: [URL],
+        overlay: WrappedVideoOverlay,
+        maxDurationSeconds: Double,
+        outputURL: URL
+    ) async -> Bool {
+        guard !clipURLs.isEmpty else { return false }
+        let renderSize = CGSize(width: 1080, height: 1920)
+        // Share the budget evenly so every session is represented within the cap.
+        let perClipSeconds = maxDurationSeconds / Double(clipURLs.count)
+
+        let composition = AVMutableComposition()
+        guard let compTrack = composition.addMutableTrack(
+            withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid
+        ) else { return false }
+
+        var cursor = CMTime.zero
+        do {
+            for url in clipURLs {
+                let asset = AVURLAsset(url: url)
+                guard let track = try await asset.loadTracks(withMediaType: .video).first else { continue }
+                let dur = CMTimeGetSeconds(try await asset.load(.duration))
+                let take = min(dur, perClipSeconds)
+                guard take > 0 else { continue }
+                let range = CMTimeRange(start: .zero, duration: CMTime(seconds: take, preferredTimescale: 600))
+                try compTrack.insertTimeRange(range, of: track, at: cursor)
+                cursor = CMTimeAdd(cursor, range.duration)
+            }
+        } catch {
+            print("ExportEngine.generatePeriodWrap insert: \(error.localizedDescription)")
+            return false
+        }
+        guard cursor > .zero else { return false }
+
+        // The slices are already 1080×1920 with identity transform, so the composition is
+        // just the overlay on top of a pass-through video layer. 60 fps via frameDuration.
+        let videoComposition = AVMutableVideoComposition()
+        videoComposition.frameDuration = CMTime(value: 1, timescale: CMTimeScale(AppConstants.wrappedOutputFPS))
+        videoComposition.renderSize = renderSize
+
+        let instruction = AVMutableVideoCompositionInstruction()
+        instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
+        instruction.layerInstructions = [AVMutableVideoCompositionLayerInstruction(assetTrack: compTrack)]
+        videoComposition.instructions = [instruction]
+
+        let parentLayer = CALayer()
+        parentLayer.frame = CGRect(origin: .zero, size: renderSize)
+        parentLayer.backgroundColor = UIColor.black.cgColor
+        let videoLayer = CALayer()
+        videoLayer.frame = parentLayer.frame
+        parentLayer.addSublayer(videoLayer)
+        parentLayer.addSublayer(makeOverlayLayer(renderSize: renderSize, overlay: overlay))
+        videoComposition.animationTool = AVVideoCompositionCoreAnimationTool(
+            postProcessingAsVideoLayer: videoLayer, in: parentLayer
+        )
+
+        return await export(composition: composition, videoComposition: videoComposition, to: outputURL)
+    }
+
+    private func export(
+        composition: AVComposition,
+        videoComposition: AVMutableVideoComposition,
+        to outputURL: URL
+    ) async -> Bool {
+        if FileManager.default.fileExists(atPath: outputURL.path) {
+            try? FileManager.default.removeItem(at: outputURL)
+        }
+        guard let session = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
+            return false
+        }
+        session.outputURL = outputURL
+        session.outputFileType = .mp4
+        session.shouldOptimizeForNetworkUse = true
+        session.videoComposition = videoComposition
+        await session.export()
+        if session.status != .completed {
+            print("ExportEngine.export failed: \(session.error?.localizedDescription ?? "unknown")")
+        }
+        return session.status == .completed
+    }
+
     // MARK: - Portrait output + overlay
 
     struct WrappedVideoOverlay {
@@ -242,44 +364,36 @@ final class ExportEngine {
             return t
         }
 
-        // TOP: Title
-        let titleFont = gothic(maxSide * 0.035)
-        let titleFrame = CGRect(
-            x: padding,
-            y: padding * 0.9,
-            width: renderSize.width - padding * 2,
-            height: titleFont.pointSize * 1.6
-        )
-        layer.addSublayer(textLayer(overlay.titleTop.uppercased(), font: titleFont, frame: titleFrame, alpha: 1))
+        // (No title at the top.)
 
-        // CENTER: Duration big + date small (like your mock)
-        let durationFont = gothic(maxSide * 0.10)
+        // Duration + date — a bit smaller and lower in the frame.
+        let durationFont = gothic(maxSide * 0.085)
         let durationFrame = CGRect(
             x: padding,
-            y: renderSize.height * 0.18,
+            y: renderSize.height * 0.42,
             width: renderSize.width - padding * 2,
-            height: durationFont.pointSize * 1.2
+            height: durationFont.pointSize * 1.05
         )
         layer.addSublayer(textLayer(overlay.durationCenter, font: durationFont, frame: durationFrame, alpha: 1))
 
-        let dateFont = gothic(maxSide * 0.03)
+        let dateFont = gothic(maxSide * 0.026)
         let dateFrame = CGRect(
             x: padding,
-            y: durationFrame.maxY + (maxSide * 0.01),
+            y: durationFrame.maxY,
             width: renderSize.width - padding * 2,
             height: dateFont.pointSize * 1.4
         )
         layer.addSublayer(textLayer(overlay.dateCenter.uppercased(), font: dateFont, frame: dateFrame, alpha: 0.85))
 
-        // BOTTOM: footer with time range + Rush Hour
-        let footerFont = gothic(maxSide * 0.04)
-        let footerFrame = CGRect(
+        // BOTTOM: the session / period title (no more "RUSH HOUR • time").
+        let titleFont = gothic(maxSide * 0.045)
+        let titleFrame = CGRect(
             x: padding,
-            y: renderSize.height - padding - footerFont.pointSize * 1.8,
+            y: renderSize.height - padding - titleFont.pointSize * 1.8,
             width: renderSize.width - padding * 2,
-            height: footerFont.pointSize * 1.8
+            height: titleFont.pointSize * 1.8
         )
-        layer.addSublayer(textLayer(overlay.footer.uppercased(), font: footerFont, frame: footerFrame, alpha: 1))
+        layer.addSublayer(textLayer(overlay.footer, font: titleFont, frame: titleFrame, alpha: 1))
 
         return layer
     }
