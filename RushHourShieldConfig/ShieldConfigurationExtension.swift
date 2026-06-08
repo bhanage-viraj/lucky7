@@ -9,11 +9,7 @@ import ManagedSettings
 import ManagedSettingsUI
 import UIKit
 
-// This extension renders the shield and iOS calls it on every open of a blocked
-// app. It shares state with the main app through a FILE in the app group (the
-// same channel the action extension uses successfully) — UserDefaults writes
-// from here don't reliably reach the app process. We stash the last-shielded
-// app's name + bundle id and the per-app open counts there.
+
 class ShieldConfigurationExtension: ShieldConfigurationDataSource {
     private let appGroupId = "group.com.andrianangg.Traffic-Man"
 
@@ -23,17 +19,11 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
             .appendingPathComponent(name)
     }
 
-    // a render = the user just opened THIS blocked app. record its name + bundle
-    // id and bump its per-app count in shared defaults (this ext can't write
-    // files, but UserDefaults persists for it). debounced ~2s. returns count.
-    // also bumps a "configTick" so the app can tell if our writes reach it.
+  
     private func recordOpen(name: String?, bundleId: String?) -> Int {
-        CFPreferencesAppSynchronize(appGroupId as CFString)   // read/write the live store, not a cached copy
+        CFPreferencesAppSynchronize(appGroupId as CFString)
         guard let defaults = UserDefaults(suiteName: appGroupId) else { return 1 }
 
-        // Per-session reset. The app's direct deletions of our counts never reach us (our
-        // own cfprefs cache masks them), but a key only the APP writes — "sessionStartedAt"
-        // — we read fresh. When it changes, a new session has begun: reset our own counts.
         let sessionStart = defaults.double(forKey: "sessionStartedAt")
         if sessionStart != defaults.double(forKey: "countedSessionStart") {
             defaults.set([String: Int](), forKey: "openCountsByApp")
@@ -50,14 +40,14 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
         var counts = (defaults.dictionary(forKey: "openCountsByApp") as? [String: Int]) ?? [:]
         var lasts = (defaults.dictionary(forKey: "lastOpenByApp") as? [String: Double]) ?? [:]
         var count = counts[key] ?? 0
-        if now - (lasts[key] ?? 0) > 0.5 {   // small debounce: collapse one open's rapid double-render, but count real re-opens
+        if now - (lasts[key] ?? 0) > 0.5 {  
             count += 1
             counts[key] = count
             lasts[key] = now
             defaults.set(counts, forKey: "openCountsByApp")
             defaults.set(lasts, forKey: "lastOpenByApp")
         }
-        // flush our writes out to the shared cfprefsd store so the app can read them
+
         CFPreferencesAppSynchronize(appGroupId as CFString)
         return max(count, 1)
     }
@@ -81,7 +71,7 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
     private func makeConfiguration(name: String?, bundleId: String?) -> ShieldConfiguration {
         let appName = name ?? "This app"
         let count = recordOpen(name: name, bundleId: bundleId)
-        let timesText = count == 1 ? "1 time today" : "\(count) times today"
+        let timesText = count == 1 ? "1 time this session" : "\(count) times this session"
 
         let blue = UIColor(red: 24.0/255, green: 128.0/255, blue: 229.0/255, alpha: 1.0)
         // white page in light mode, black in dark mode
