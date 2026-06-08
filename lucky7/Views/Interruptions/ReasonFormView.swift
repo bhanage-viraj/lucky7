@@ -15,68 +15,25 @@ struct ReasonFormView: View {
 
     @FocusState private var fieldFocused: Bool
 
-    // straight off the figma — navy sheet gradient + dark navy "Reason" title
-    private let sheetTop = Color(red: 0x00/255.0, green: 0x32/255.0, blue: 0x61/255.0)
-    private let sheetBottom = Color(red: 0x0B/255.0, green: 0x1F/255.0, blue: 0x32/255.0)
     private let titleNavy = Color(red: 0x02/255.0, green: 0x2B/255.0, blue: 0x54/255.0)
 
     var body: some View {
-        GeometryReader { geo in
-            // card grows with the screen but stays sane on the small ones (lands ~420 on a normal phone)
-            let cardHeight = min(420, max(geo.size.height * 0.50, 300))
-
-            ZStack(alignment: .bottom) {
-                // dimmed session behind the sheet (the figma dims the recording screen ~80% black)
-                Color.black.opacity(0.82)
-                    .ignoresSafeArea()
-                    .contentShape(Rectangle())
-                    .onTapGesture { fieldFocused = false }
-
-                sheet(cardHeight: cardHeight)
-            }
-            // keep the sheet pinned to the bottom — don't let the keyboard shove it up and expose the scrim
-            .ignoresSafeArea(.keyboard, edges: .bottom)
-        }
-    }
-
-    private func sheet(cardHeight: CGFloat) -> some View {
-        VStack(spacing: 20) {
-            grabber
-            reasonCard(height: cardHeight)
+        VStack(spacing: 16) {
+            reasonCard
+                .frame(maxHeight: .infinity)
             buttons
         }
-        .padding(.top, 14)
         .padding(.horizontal, 24)
-        .padding(.bottom, 40)
-        .frame(maxWidth: .infinity)
-        // navy panel, only the top corners rounded, runs off the bottom edge
-        .background {
-            UnevenRoundedRectangle(topLeadingRadius: 40, topTrailingRadius: 40)
-                .fill(LinearGradient(colors: [sheetTop, sheetBottom], startPoint: .top, endPoint: .bottom))
-                .shadow(color: .black.opacity(0.25), radius: 20, x: 0, y: -8)
-                .ignoresSafeArea(.container, edges: .bottom)
-        }
-        // stop sign / 😩 / 🚧 cluster sits BEHIND the sheet and peeks over the top edge
-        .background(alignment: .top) {
-            Image("ReasonFormHeader")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 272)
-                .offset(y: -140)
-        }
+        .padding(.top, 24)
+        .padding(.bottom, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // keep the card steady — the keyboard covers the buttons instead of squeezing everything up
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
-    private var grabber: some View {
-        Capsule()
-            .fill(.white.opacity(0.7))
-            .frame(width: 56, height: 6)
-    }
-
-    private func reasonCard(height: CGFloat) -> some View {
+    private var reasonCard: some View {
         RoundedRectangle(cornerRadius: 36)
             .fill(.white)
-            .frame(height: height)
-            // faint swirl baked into the figma card
             .overlay {
                 Image("Vector16")
                     .resizable()
@@ -95,12 +52,11 @@ struct ReasonFormView: View {
                                 .foregroundStyle(.black.opacity(0.30))
                                 .padding(.top, 8)
                                 .padding(.leading, 5)
-                                .allowsHitTesting(false)   // taps fall through to the editor + its caret
+                                .allowsHitTesting(false)  
                         }
                         TextEditor(text: $reason)
                             .font(.system(size: 22))
-                            .foregroundStyle(.black)   // card is always white, keep text black in both modes
-                            .tint(.black)              // native blinking caret, black so it shows on white
+                            .foregroundStyle(.black)
                             .scrollContentBackground(.hidden)
                             .focused($fieldFocused)
                             .toolbar {
@@ -122,7 +78,7 @@ struct ReasonFormView: View {
     }
 
     private var buttons: some View {
-        // faded + disabled until they actually write something (matches the figma)
+        // disabled until they type something
         let canSubmit = !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         return VStack(spacing: 10) {
@@ -160,11 +116,12 @@ struct ReasonFormView: View {
 
 #Preview {
     ZStack {
-        Color.gray
-        ReasonFormView(
-            appName: "Instagram",
-            onSubmit: { _ in },
-            onSkip: {}
+        LinearGradient(
+            colors: [Color(red: 0x00/255.0, green: 0x32/255.0, blue: 0x61/255.0),
+                     Color(red: 0x0B/255.0, green: 0x1F/255.0, blue: 0x32/255.0)],
+            startPoint: .top, endPoint: .bottom
         )
+        .ignoresSafeArea()
+        ReasonFormView(appName: "Instagram", onSubmit: { _ in }, onSkip: {})
     }
 }
