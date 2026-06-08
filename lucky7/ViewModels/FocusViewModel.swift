@@ -20,7 +20,7 @@ import UIKit
 final class FocusViewModel: ObservableObject {
     @Published var selection = FamilyActivitySelection()
     @Published private(set) var isEngaged = false
-    @Published private(set) var isRunning = false   // focus actively running (false = paused, e.g. on a distraction)
+    @Published private(set) var isRunning = false   // false = paused, e.g. on a distraction
     @Published private(set) var activeBreaks: [Distraction] = []
     @Published private(set) var now: Date = .now
 
@@ -33,12 +33,10 @@ final class FocusViewModel: ObservableObject {
 
     init() {
         loadSelection()
-        // Cold launch: a recording session can't survive an app kill, and closing the app ends
-        // the session — so any shield still applied is stale. Lift it now; engage() re-applies
-        // when the user starts a new session. (Backgrounding keeps the app alive and does NOT
-        // hit this, so a briefly-paused session stays blocked.)
+        // cold launch: any shield still applied is stale, lift it
         store.clearAllSettings()
         SharedJailbreakStore.endSession()
+        endBreakActivity()
     }
 
     var hasSelection: Bool {
@@ -81,9 +79,10 @@ final class FocusViewModel: ObservableObject {
         isRunning = false
     }
 
-    // back from a distraction: reblock everything and resume focus
+    // back from a distraction: reblock everything and resume
     func resume() {
         for distraction in activeBreaks {
+            if distraction.endTime == nil { distraction.endTime = .now }
             distraction.breakGrantedUntil = nil
             cancelBreakNotification(for: distraction)
         }
@@ -96,11 +95,12 @@ final class FocusViewModel: ObservableObject {
 
     func release() {
         store.clearAllSettings()
-        SharedJailbreakStore.endSession()   // tell the monitor ext + next launch the session is over
+        SharedJailbreakStore.endSession()
         isEngaged = false
         isRunning = false
         for distraction in activeBreaks {
-            distraction.breakGrantedUntil = nil   // clear stale break state so nothing reads as still-active
+            if distraction.endTime == nil { distraction.endTime = .now }
+            distraction.breakGrantedUntil = nil
             cancelBreakNotification(for: distraction)
         }
         activeBreaks.removeAll()
@@ -110,8 +110,7 @@ final class FocusViewModel: ObservableObject {
     }
 
     func grantBreak(for distraction: Distraction) {
-        // only ONE app unlocked at a time — re-block any other break still active,
-        // recording how long it was open so the stats stay correct.
+        // only one app unlocked at a time, re-block any other active break
         let others = activeBreaks.filter { $0.id != distraction.id }
         for other in others {
             other.breakGrantedUntil = nil
@@ -125,26 +124,24 @@ final class FocusViewModel: ObservableObject {
         if !activeBreaks.contains(where: { $0.id == distraction.id }) {
             activeBreaks.append(distraction)
         }
-        applyShield()   // only this app is unblocked now; the previous one is re-blocked
+        applyShield()
         scheduleBreakNotification(for: distraction)
         startBreakMonitor()
-        // no auto-redirect — the Live Activity shows the unlocked state and the user
-        // opens the app themselves (that manual step is the friction we want).
         let appName = distraction.appDisplayName ?? distraction.appOpened
         startBreakActivity(appName: appName, until: until)
-        // The island shows a string; resolve the real name (data-access) and backfill so the
-        // island + the warning + the break-ended notification show it when the lookup works.
+        // resolve the real name and backfill once we have it
         if (distraction.appDisplayName ?? "").isEmpty {
             Task { @MainActor in
                 guard let name = await resolveDisplayName(for: distraction), !name.isEmpty else { return }
                 distraction.appDisplayName = name
-                startBreakActivity(appName: name, until: until)   // updates the island in place
+                startBreakActivity(appName: name, until: until)
             }
         }
-        isRunning = false   // they're distracted now — auto-pause the session
+        isRunning = false   // auto-pause while distracted
     }
 
     func endBreakEarly(for distraction: Distraction) {
+        if distraction.endTime == nil { distraction.endTime = .now }
         distraction.breakGrantedUntil = nil
         activeBreaks.removeAll { $0.id == distraction.id }
         applyShield()
@@ -153,7 +150,7 @@ final class FocusViewModel: ObservableObject {
         if activeBreaks.isEmpty { endBreakActivity() }
     }
 
-    // schedules the 15-min interval; the monitor extension reblocks on intervalDidEnd
+    // schedules the 15-min interval, monitor ext reblocks when it ends
     private func startBreakMonitor() {
         saveSelectionForMonitor()
         let now = Date()
@@ -177,7 +174,7 @@ final class FocusViewModel: ObservableObject {
         try? data.write(to: url, options: .atomic)
     }
 
-    // MARK: - Live Activity (the Dynamic Island break timer)
+    // MARK: - Live Activity
 
     private var liveActivity: Activity<BreakActivityAttributes>?
 
@@ -189,15 +186,11 @@ final class FocusViewModel: ObservableObject {
             endsAt: endsAt,
             statusText: "\(name) unlocked"
         )
-        // only one break is ever active — if the island is already up (switching
-        // apps), update it to the new app instead of starting a second.
+        // if the island is already up, update it instead of starting a second
         if let activity = liveActivity {
             Task { await activity.update(ActivityContent(state: state, staleDate: endsAt)) }
             return
         }
-        // start it compact, no expand — the in-app card already played the "expand
-        // then shrink into the island" moment, so the island just shows quietly when
-        // the user leaves (no re-expand).
         do {
             liveActivity = try Activity.request(
                 attributes: BreakActivityAttributes(appName: name),
@@ -205,15 +198,13 @@ final class FocusViewModel: ObservableObject {
                 pushType: nil
             )
         } catch {
-            // if it can't start we just go without the island timer
         }
     }
 
     private func endBreakActivity() {
         let current = liveActivity
         liveActivity = nil
-        // Keep the app alive long enough to actually tear the Live Activity down — otherwise
-        // ending the session can return before this async work runs and the island lingers.
+        // keep the app alive long enough to actually tear the Live Activity down
         let bgTask = UIApplication.shared.beginBackgroundTask(withName: "endBreakActivity")
         Task {
             await current?.end(nil, dismissalPolicy: .immediate)
@@ -224,12 +215,7 @@ final class FocusViewModel: ObservableObject {
         }
     }
 
-    // the visible app name from the opaque token (data-access). Label(token) covers
-    // the in-app card, but the Dynamic Island, the "one break at a time" warning, and
-    // the break-ended notification all need a plain string — this backfills it.
-    // Resolve the real app name up front, while the app is still foregrounded on the reason
-    // screen. If we only kick this off at break-grant time it can't finish — you immediately
-    // leave to open the app and the lookup is suspended, so the Live Activity stays "Blocked App".
+    // resolve the real app name up front while we're still foregrounded
     func prefetchDisplayName(for distraction: Distraction) {
         guard (distraction.appDisplayName ?? "").isEmpty else { return }
         Task { @MainActor in
@@ -270,10 +256,6 @@ final class FocusViewModel: ObservableObject {
 
     private func applyShield() {
         let brokenTokens = Set(activeBreaks.compactMap { decodeToken($0.tokenData) })
-        // A break whose token we can't decode is a CATEGORY break: iOS gives no per-app
-        // token for a category, so we can't lift a single app out of it — we lift the
-        // WHOLE category for the break, then re-block when it ends. Individual-app breaks
-        // still lift surgically via brokenTokens above.
         let hasCategoryBreak = activeBreaks.contains { decodeToken($0.tokenData) == nil }
 
         let effective = selection.applicationTokens.subtracting(brokenTokens)
@@ -304,9 +286,7 @@ final class FocusViewModel: ObservableObject {
     }
 
     private func tick() {
-        // Only do work (and publish `now`) while a break is actually active. Otherwise
-        // this fired every second for the whole session and re-rendered the camera-heavy
-        // recording screen for nothing — pure wasted work during recording.
+        // only do work while a break is active, otherwise we re-render for nothing
         guard !activeBreaks.isEmpty else { return }
         now = .now
         let expired = activeBreaks.filter { d in
@@ -315,6 +295,7 @@ final class FocusViewModel: ObservableObject {
         }
         guard !expired.isEmpty else { return }
         for d in expired {
+            if d.endTime == nil { d.endTime = d.breakGrantedUntil ?? now }
             d.breakGrantedUntil = nil
         }
         activeBreaks.removeAll { d in expired.contains(where: { $0.id == d.id }) }
