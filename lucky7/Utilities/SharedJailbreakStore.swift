@@ -17,8 +17,7 @@ struct PendingJailbreakEvent: Identifiable {
     let actionTaken: String?
 }
 
-// Each writer gets its own file so the app and the two extensions never
-// overwrite each other's events. The app reads all of them.
+// each writer gets its own file so the app and the extensions don't clobber each other
 enum SharedJailbreakStore {
     static let appGroupId = "group.com.andrianangg.Traffic-Man"
 
@@ -59,8 +58,7 @@ enum SharedJailbreakStore {
         )
     }
 
-    // tracks the last break we've already shown a prompt for, so we don't
-    // re-prompt the same one (without wiping the action events the count needs)
+    // last break we already prompted for, so we don't re-prompt it
     static var lastPromptedBreakAt: TimeInterval {
         get { UserDefaults.standard.double(forKey: "lastPromptedBreakAt") }
         set { UserDefaults.standard.set(newValue, forKey: "lastPromptedBreakAt") }
@@ -95,17 +93,9 @@ enum SharedJailbreakStore {
         }
     }
 
-    // the shield-config extension writes this file on every open of a blocked
-    // app: { lastAppName, lastBundleId, counts: [name:Int] }. A file is the
-    // channel that actually reaches the app cross-process; UserDefaults is a
-    // best-effort fallback.
     static var configSharedURL: URL? { fileURL("config_shared.json") }
 
-    // diagnostic — the config ext increments this each render; if it climbs in
-    // the app too, the config ext's UserDefaults writes DO reach us cross-process
-    // cross-process App Group UserDefaults is cached by cfprefsd, so a plain read
-    // returns STALE values that the shield extensions wrote. Force a sync first
-    // (the pattern the kingstinct device-activity library uses), then read fresh.
+    // sync before reading, otherwise we get stale cached values
     private static func sharedDefaults() -> UserDefaults? {
         CFPreferencesAppSynchronize(appGroupId as CFString)
         return UserDefaults(suiteName: appGroupId)
@@ -120,8 +110,7 @@ enum SharedJailbreakStore {
         (sharedDefaults()?.dictionary(forKey: "openCountsByApp") as? [String: Int]) ?? [:]
     }
 
-    // most-recently-shielded app — the action extension only has an opaque token,
-    // so the app reads these to label a break and to know which app to route to
+    // most-recently-shielded app, used to label a break and route back
     static func lastShieldedAppName() -> String? {
         sharedDefaults()?.string(forKey: "lastShieldedAppName")
     }
@@ -135,24 +124,30 @@ enum SharedJailbreakStore {
     }
 
     static func startSession() {
-        removeAll()   // also deletes config_shared.json so counts/last-app reset
+        removeAll()
         lastPromptedBreakAt = 0
-        // clear the fallback defaults too
         if let defaults = UserDefaults(suiteName: appGroupId) {
             defaults.removeObject(forKey: "openCountsByApp")
             defaults.removeObject(forKey: "lastOpenByApp")
             defaults.removeObject(forKey: "lastShieldedAppName")
             defaults.removeObject(forKey: "lastShieldedBundleId")
             defaults.removeObject(forKey: "configTick")
-            // The shield-config ext can't see our deletions (its own cfprefs cache masks
-            // them), but it CAN read a key only WE write. Stamp the session start; the ext
-            // compares it to its own last-seen stamp and resets its count itself.
+            // stamp session start so the config ext resets its own count
             defaults.set(Date().timeIntervalSince1970, forKey: "sessionStartedAt")
-            CFPreferencesAppSynchronize(appGroupId as CFString)   // flush so the shield ext reads the new stamp
+            defaults.set(true, forKey: "sessionActive")
+            CFPreferencesAppSynchronize(appGroupId as CFString)
         }
         let session: [String: Any] = ["startedAt": Date().timeIntervalSince1970]
         if let url = sessionFileURL, let data = try? JSONSerialization.data(withJSONObject: session) {
             try? data.write(to: url, options: .atomic)
         }
+    }
+
+    // mark the session over so the monitor ext stops re-blocking
+    static func endSession() {
+        guard let defaults = UserDefaults(suiteName: appGroupId) else { return }
+        defaults.set(false, forKey: "sessionActive")
+        CFPreferencesAppSynchronize(appGroupId as CFString)
+        if let url = sessionFileURL { try? FileManager.default.removeItem(at: url) }
     }
 }

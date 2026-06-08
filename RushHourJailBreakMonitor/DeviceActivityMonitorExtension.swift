@@ -26,11 +26,17 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
         return try? JSONDecoder().decode(FamilyActivitySelection.self, from: data)
     }
 
-    // break is over → put the shield back on everything
     override func intervalDidEnd(for activity: DeviceActivityName) {
         super.intervalDidEnd(for: activity)
-        guard let selection = loadSelection() else { return }
         let store = ManagedSettingsStore(named: ManagedSettingsStore.Name("rushhour.focus"))
+        CFPreferencesAppSynchronize(appGroupId as CFString)   // dodge the stale cfprefs cache
+        let sessionActive = UserDefaults(suiteName: appGroupId)?.bool(forKey: "sessionActive") ?? false
+        guard sessionActive else {
+            store.clearAllSettings()
+            return
+        }
+        // if selection can't be read, leave the existing shield as-is instead of unblocking
+        guard let selection = loadSelection() else { return }
         store.shield.applications = selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
         store.shield.applicationCategories = selection.categoryTokens.isEmpty ? nil : .specific(selection.categoryTokens)
         store.shield.webDomains = selection.webDomainTokens.isEmpty ? nil : selection.webDomainTokens

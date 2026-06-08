@@ -10,6 +10,11 @@ final class SessionTimerViewModel: ObservableObject {
     @Published var showFinishSession: Bool = false
     @Published var requestReturnToHome: Bool = false
 
+    // One id per focus session, minted in configure() (called when a session is set up).
+    // Distractions are saved under it AND the Session row is created with it, so the analytics
+    // screens — which match distractions by Session.id — actually find them.
+    private(set) var sessionId = UUID()
+
     private var timer: Timer?
     private var totalSeconds: Int = 2 * 3600 + 30 * 60
     private(set) var configuredTotalSeconds: Int = 2 * 3600 + 30 * 60
@@ -22,6 +27,7 @@ final class SessionTimerViewModel: ObservableObject {
     func configure(hours: Int, minutes: Int) {
         pause()
         showFinishSession = false
+        sessionId = UUID()   // fresh id for this session
 
         let clampedHours = min(max(hours, 0), 23)
         let clampedMinutes = min(max(minutes, 1), 59)

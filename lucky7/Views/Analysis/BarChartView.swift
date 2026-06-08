@@ -1,28 +1,12 @@
+//
+//  BarChartView 2.swift
+//  lucky7
+//
+//  Created by Andrian on 08/06/26.
+//
 
 import SwiftUI
 
-// MARK: - Data Model
-struct BarChartData: Identifiable {
-    let id = UUID()
-    let label: String
-    let primary: Double    
-    let secondary: Double
-}
-
-// MARK: - Config
-struct BarChartConfig {
-    var primaryColor: Color = .blue
-    var secondaryColor: Color = .orange
-    var primaryLabel: String = "Focused"
-    var secondaryLabel: String = "Distracted"
-    var maxValue: Double = 120
-    var barWidth: CGFloat = 12
-    var gridLines: [Int] = [120, 90, 60, 30, 0]
-    var showLegend: Bool = true
-    var showYAxis: Bool = true
-}
-
-// MARK: - Main Chart View
 struct BarChartView: View {
     let data: [BarChartData]
     var config: BarChartConfig = BarChartConfig()
@@ -55,8 +39,8 @@ struct BarChartView: View {
     // MARK: - Subviews
     private var legendView: some View {
         HStack(spacing: 24) {
-            LegendItem(color: config.primaryColor, label: config.primaryLabel)
-            LegendItem(color: config.secondaryColor, label: config.secondaryLabel)
+            LegendItemView(color: config.primaryColor, label: config.primaryLabel)
+            LegendItemView(color: config.secondaryColor, label: config.secondaryLabel)
             Spacer()
         }
     }
@@ -127,22 +111,6 @@ struct BarChartView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-        }
-    }
-}
-
-// MARK: - Legend Item
-struct LegendItem: View {
-    let color: Color
-    let label: String
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(color)
-                .frame(width: 10, height: 10)
-            Text(label)
-                .font(.system(size: 14))
         }
     }
 }

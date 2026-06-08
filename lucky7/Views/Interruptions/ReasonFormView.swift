@@ -15,130 +15,113 @@ struct ReasonFormView: View {
 
     @FocusState private var fieldFocused: Bool
 
-    private let reasonRed = Color(red: 0xE0/255.0, green: 0x2D/255.0, blue: 0x38/255.0)
+    private let titleNavy = Color(red: 0x02/255.0, green: 0x2B/255.0, blue: 0x54/255.0)
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack {
-                Color("CanvasRed")
-
-                Image("TicketCardPattern")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .opacity(0.18)
-                    .clipped()
-
-                VStack(spacing: 0) {
-                    Spacer(minLength: 50)
-
-                    Image("ReasonFormHeader")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: 120)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 70)
-                        .offset(y: 40)
-                        .zIndex(2)
-
-                    reasonCard
-                        .zIndex(1)
-
-                    buttons
-                        .padding(.top, 16)
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 24)
-                .frame(width: geo.size.width, height: geo.size.height)
-            }
-            .frame(width: geo.size.width, height: geo.size.height)
-            .clipped()
+        VStack(spacing: 16) {
+            reasonCard
+                .frame(maxHeight: .infinity)
+            buttons
         }
-        .ignoresSafeArea()
-        .contentShape(Rectangle())
-        .onTapGesture { fieldFocused = false }
+        .padding(.horizontal, 24)
+        .padding(.top, 24)
+        .padding(.bottom, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // keep the card steady — the keyboard covers the buttons instead of squeezing everything up
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
     private var reasonCard: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 32).fill(.black).offset(y: 6)
-            RoundedRectangle(cornerRadius: 32)
-                .fill(.white)
-                .overlay(RoundedRectangle(cornerRadius: 32).strokeBorder(.black, lineWidth: 2))
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Reason")
-                    .font(.custom("SpecialGothicExpandedOne-Regular", size: 30))
-                    .foregroundStyle(reasonRed)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
-
-                ZStack(alignment: .topLeading) {
-                    if reason.isEmpty {
-                        Text("I open this because….")
-                            .font(.system(size: 18))
-                            .foregroundStyle(.black.opacity(0.35))
-                            .padding(.top, 8)
-                            .padding(.leading, 5)
-                    }
-                    TextEditor(text: $reason)
-                        .font(.system(size: 18))
-                        .foregroundColor(.black)   // card is always white, so keep text black in both modes
-                        .tint(.black)
-                        .scrollContentBackground(.hidden)
-                        .focused($fieldFocused)
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 180)
-                }
-
-                Spacer(minLength: 0)
+        RoundedRectangle(cornerRadius: 36)
+            .fill(.white)
+            .overlay {
+                Image("Vector16")
+                    .resizable()
+                    .scaledToFill()
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 40)
-            .padding(.bottom, 24)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .clipShape(RoundedRectangle(cornerRadius: 32))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Reason")
+                        .font(.custom("SpecialGothicExpandedOne-Regular", size: 32))
+                        .foregroundStyle(titleNavy)
+
+                    ZStack(alignment: .topLeading) {
+                        if reason.isEmpty {
+                            Text("I open this because….")
+                                .font(.system(size: 22))
+                                .foregroundStyle(.black.opacity(0.30))
+                                .padding(.top, 8)
+                                .padding(.leading, 5)
+                                .allowsHitTesting(false)  
+                        }
+                        TextEditor(text: $reason)
+                            .font(.system(size: 22))
+                            .foregroundStyle(.black)
+                            .scrollContentBackground(.hidden)
+                            .focused($fieldFocused)
+                            .toolbar {
+                                ToolbarItemGroup(placement: .keyboard) {
+                                    Spacer()
+                                    Button("Done") { fieldFocused = false }
+                                }
+                            }
+                    }
+                    .frame(maxHeight: .infinity, alignment: .topLeading)
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 28)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 36))
+            .overlay {
+                RoundedRectangle(cornerRadius: 36).strokeBorder(.black, lineWidth: 1.5)
+            }
     }
 
     private var buttons: some View {
-        VStack(spacing: 6) {
+        // disabled until they type something
+        let canSubmit = !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        return VStack(spacing: 10) {
             Button {
                 onSubmit(reason)
             } label: {
-                Text("SUBMIT")
-                    .font(.custom("SpecialGothicExpandedOne-Regular", size: 16))
-                    .tracking(1.0)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(
-                        Capsule()
-                            .fill(.black)
-                            .overlay(Capsule().strokeBorder(.white, lineWidth: 2))
-                    )
-                    .shadow(color: .black, radius: 0, x: 1, y: 4)
+                pill(title: "SUBMIT & UNLOCK", bordered: false)
+                    .opacity(canSubmit ? 1 : 0.5)
             }
             .buttonStyle(.plain)
+            .disabled(!canSubmit)
 
             Button(action: onSkip) {
-                Text("SKIP")
-                    .font(.custom("SpecialGothicExpandedOne-Regular", size: 16))
-                    .tracking(1.4)
-                    .foregroundStyle(.white)
-                    .padding(.vertical, 14)
+                pill(title: "CANCEL", bordered: true)
             }
+            .buttonStyle(.plain)
         }
+    }
+
+    private func pill(title: String, bordered: Bool) -> some View {
+        Text(title)
+            .font(.custom("SpecialGothicExpandedOne-Regular", size: 14))
+            .tracking(0.5)
+            .foregroundStyle(.black)
+            .frame(maxWidth: .infinity)
+            .frame(height: 56)
+            .background(Capsule().fill(.white))
+            .overlay {
+                if bordered {
+                    Capsule().strokeBorder(.black, lineWidth: 1.5)
+                }
+            }
     }
 }
 
 #Preview {
-    ReasonFormView(
-        appName: "Instagram",
-        onSubmit: { _ in },
-        onSkip: {}
-    )
+    ZStack {
+        LinearGradient(
+            colors: [Color(red: 0x00/255.0, green: 0x32/255.0, blue: 0x61/255.0),
+                     Color(red: 0x0B/255.0, green: 0x1F/255.0, blue: 0x32/255.0)],
+            startPoint: .top, endPoint: .bottom
+        )
+        .ignoresSafeArea()
+        ReasonFormView(appName: "Instagram", onSubmit: { _ in }, onSkip: {})
+    }
 }

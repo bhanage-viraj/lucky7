@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import UserNotifications
+import ManagedSettings
 
 @main
 struct lucky7App: App {
@@ -51,6 +52,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         return true
+    }
+
+    // Closing the app ends the session — lift the shield. Best-effort: iOS doesn't reliably call
+    // this on a swipe-kill, so FocusViewModel.init()'s cold-launch clear is the backstop.
+    func applicationWillTerminate(_ application: UIApplication) {
+        ManagedSettingsStore(named: ManagedSettingsStore.Name("rushhour.focus")).clearAllSettings()
+        SharedJailbreakStore.endSession()
     }
 
     // Foreground delivery — show the banner AND drive the return.

@@ -154,7 +154,7 @@ struct FinishSessionScreen: View {
 
     private func createSessionIfNeeded() {
         guard sessionId == nil else { return }
-        let id = UUID()
+        let id = sessionTimer.sessionId   // SAME id the distractions were saved under, so analytics matches
         let duration = TimeInterval(sessionTimer.configuredTotalSeconds)
         let endTime = Date()
         let session = Session(

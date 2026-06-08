@@ -28,7 +28,6 @@ struct RecordingPage: View {
     #endif
 
     // jailbreak: distraction prompt + in-app unlock card + records sheet
-    @State private var sessionId = UUID()
     @State private var pendingPrompt: PendingPrompt?
     @State private var unlock: UnlockInfo?
     @State private var breakBlockedInfo: BreakBlockedInfo?
@@ -41,9 +40,6 @@ struct RecordingPage: View {
 
     struct UnlockInfo: Identifiable {
         let id = UUID()
-        let kind: BreakUnlockOverlay.Kind
-        var appName: String = ""
-        var tokenData: Data? = nil
         var timeText: String = ""
     }
 
@@ -51,8 +47,6 @@ struct RecordingPage: View {
     // app can be unlocked at a time, so a second "Break It" is rejected with a warning.
     struct BreakBlockedInfo: Identifiable {
         let id = UUID()
-        let appName: String
-        let timeLeft: String
     }
 
     var body: some View {
@@ -271,12 +265,25 @@ struct RecordingPage: View {
         #if os(iOS)
         .toolbar(.hidden, for: .tabBar)   // recording is a full-screen mode — keep the tab bar on the home page only
         #endif
-        // jailbreak: in-app "App unlocked" card that shrinks toward the island
+        // jailbreak: in-app "App Unlocked" card that shrinks up into the Dynamic Island,
+        // plus the "one break at a time" warning — both styled after the figma cards.
         .overlay {
             #if os(iOS)
             if let u = unlock {
-                BreakUnlockOverlay(kind: u.kind, appName: u.appName, tokenData: u.tokenData, timeText: u.timeText, onFinished: { unlock = nil })
-                    .id(u.id)
+                FocusAlertCard(
+                    title: "App Unlocked",
+                    message: "The selected app is now available for \(u.timeText)",
+                    autoDismiss: true,
+                    onDismiss: { unlock = nil }
+                )
+                .id(u.id)
+            } else if let b = breakBlockedInfo {
+                FocusAlertCard(
+                    title: "One break at a time",
+                    message: "An app is already unlocked. You can unlock another app after returning to your focus session.",
+                    onDismiss: { breakBlockedInfo = nil }
+                )
+                .id(b.id)
             }
             #endif
         }
@@ -305,15 +312,6 @@ struct RecordingPage: View {
         } message: {
             Text("Rush Hour sends a quick notification to bring you back here when you tap “Break It” or “Back to Session” on the block screen. Tap that notification to return — without notifications on, it can fail.")
         }
-        .alert(
-            "One break at a time",
-            isPresented: Binding(get: { breakBlockedInfo != nil }, set: { if !$0 { breakBlockedInfo = nil } }),
-            presenting: breakBlockedInfo
-        ) { _ in
-            Button("Got it", role: .cancel) { breakBlockedInfo = nil }
-        } message: { info in
-            Text("\(info.appName) is still unlocked — \(info.timeLeft) left. Finish that break before you can unlock another app.")
-        }
         .onDisappear {
             if !sessionRecording.isExporting, !sessionRecording.isRecording {
                 ScreenWakeLock.release()
@@ -339,6 +337,7 @@ struct RecordingPage: View {
                 }
                 checkPendingEvents()   // jailbreak: pick up a break taken on the shield
                 cancelShieldFallbackNotifications()   // clear delivered shield notifications
+                cancelAwayNudges()   // they're back — drop the "still there?" pings
                 // notifications ARE the return path now — re-nudge if they got denied mid-session
                 Task { if await NotificationPermission.isDenied() { showNotifNudge = true } }
             case .background:
@@ -349,6 +348,12 @@ struct RecordingPage: View {
                     sessionRecording.pauseRecording()
                     groupOffset = 0
                 }
+                #if os(iOS)
+                // away from a paused session (and not on a break) → ping them to come back
+                if hasStarted && focusController.activeBreaks.isEmpty {
+                    scheduleAwayNudges()
+                }
+                #endif
             case .inactive:
                 break
             @unknown default:
@@ -377,47 +382,76 @@ struct RecordingPage: View {
         .fullScreenCover(isPresented: $showCrashSession) {
             CrashSessionScreen(onFlowComplete: exitToHomeFromSessionFlow)
         }
-        // jailbreak: reason prompt when a break was taken on the shield
-        .fullScreenCover(item: $pendingPrompt) { prompt in
-            DistractionPromptScreen(
+        // jailbreak: reason sheet over the recording when a break was taken on the shield
+        .sheet(item: $pendingPrompt) { prompt in
+            ReasonFormView(
                 appName: prompt.distraction.appOpened.isEmpty ? "this app" : prompt.distraction.appOpened,
-                countToday: 1,
-                startAtReason: true,
-                onBackToSession: {
-                    modelContext.delete(prompt.distraction)
-                    try? modelContext.save()
-                    pendingPrompt = nil
-                },
-                onBreakWithReason: { reason in
-                    prompt.distraction.reason = reason
-                    prompt.distraction.reasonSubmitted = true
-                    #if os(iOS)
-                    focusController.grantBreak(for: prompt.distraction)
-                    let name = prompt.distraction.appDisplayName ?? prompt.distraction.appOpened
-                    unlock = UnlockInfo(kind: .breakUnlock, appName: name.isEmpty ? "Blocked App" : name, tokenData: prompt.distraction.tokenData, timeText: "15:00")
-                    #endif
-                    try? modelContext.save()
-                    pendingPrompt = nil
-                }
+                onSubmit: { takeBreak($0, for: prompt) },
+                onSkip: { takeBreak("", for: prompt) }
             )
+            .presentationDetents([.large])
+            .presentationCornerRadius(40)
+            .presentationDragIndicator(.visible)
+            .presentationBackground {
+                LinearGradient(
+                    colors: [Color(red: 0x00/255.0, green: 0x32/255.0, blue: 0x61/255.0),
+                             Color(red: 0x0B/255.0, green: 0x1F/255.0, blue: 0x32/255.0)],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .overlay {
+                    Image("ReasonSheetBg")
+                        .resizable()
+                        .scaledToFill()
+                        .blendMode(.overlay)
+                }
+            }
+            // sheet stays put until they actually submit or cancel — no swipe-away
+            .interactiveDismissDisabled()
         }
+    }
+
+    private func takeBreak(_ reason: String, for prompt: PendingPrompt) {
+        prompt.distraction.reason = reason
+        prompt.distraction.reasonSubmitted = true
+        #if os(iOS)
+        focusController.grantBreak(for: prompt.distraction)
+        let secs = Int(FocusViewModel.breakDuration)
+        unlock = UnlockInfo(timeText: String(format: "%d:%02d", secs / 60, secs % 60))
+        #endif
+        try? modelContext.save()
+        pendingPrompt = nil
+    }
+
+    // nudge the user back when they leave a paused session sitting for a while (10 + 20 min)
+    private func scheduleAwayNudges() {
+        let ids = ["rushhour.awaynudge.1", "rushhour.awaynudge.2"]
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+        for (i, minutes) in [10, 20].enumerated() {
+            let content = UNMutableNotificationContent()
+            content.title = "Are you still there?"
+            content.body = "Your focus session is paused — tap to jump back in."
+            content.sound = .default
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(minutes * 60), repeats: false)
+            center.add(UNNotificationRequest(identifier: ids[i], content: content, trigger: trigger))
+        }
+    }
+
+    private func cancelAwayNudges() {
+        UNUserNotificationCenter.current()
+            .removePendingNotificationRequests(withIdentifiers: ["rushhour.awaynudge.1", "rushhour.awaynudge.2"])
     }
 
     // jailbreak: a break was taken on the shield → record it and prompt for a reason
     private func checkPendingEvents() {
         #if os(iOS)
-        guard pendingPrompt == nil, breakBlockedInfo == nil else { return }
+        guard pendingPrompt == nil, breakBlockedInfo == nil, unlock == nil else { return }
         guard let pair = SharedJailbreakStore.nextUnhandledBreak() else { return }
 
         // one break at a time: if an app is already unlocked, reject this new break —
         // keep the active break running, warn the user, and skip the reason form.
-        if let active = focusController.activeBreaks.first(where: { focusController.remainingSeconds(for: $0) > 0 }) {
-            let name = active.appDisplayName ?? active.appOpened
-            let left = focusController.remainingSeconds(for: active)
-            breakBlockedInfo = BreakBlockedInfo(
-                appName: name.isEmpty ? "Blocked App" : name,
-                timeLeft: String(format: "%d:%02d", Int(left) / 60, Int(left) % 60)
-            )
+        if focusController.activeBreaks.contains(where: { focusController.remainingSeconds(for: $0) > 0 }) {
+            breakBlockedInfo = BreakBlockedInfo()
             SharedJailbreakStore.markBreakHandled(pair.action.occurredAt)   // consume so it won't re-prompt
             return
         }
@@ -432,7 +466,7 @@ struct RecordingPage: View {
             ?? SharedJailbreakStore.lastShieldedBundleId()
 
         let distraction = Distraction(
-            sessionId: sessionId,
+            sessionId: sessionTimer.sessionId,
             appOpened: displayName,
             startTime: pair.config?.occurredAt ?? pair.action.occurredAt,
             tokenData: tokenData,
@@ -464,7 +498,7 @@ struct RecordingPage: View {
 
     // stamp endTime on any break still open this session, so the distracted time is recorded
     private func closeOpenDistractions() {
-        let sid = sessionId
+        let sid = sessionTimer.sessionId
         let descriptor = FetchDescriptor<Distraction>(
             predicate: #Predicate { $0.sessionId == sid }
         )
@@ -494,6 +528,9 @@ struct RecordingPage: View {
 
     private func endSessionEarly() {
         sessionTimer.pause()
+        #if os(iOS)
+        focusController.release()   // lift the shield the moment they end, not after the recap
+        #endif
         finalizeRecording {
             showCrashSession = true
         }
