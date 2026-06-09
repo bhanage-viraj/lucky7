@@ -32,6 +32,10 @@ struct HomePage: View {
 
     /// false = home card; true = full-screen session. Drives the enlarge transition.
     @State private var sessionActive = false
+
+    /// true once the session is pushed into full-focus mode — morphs the one shared camera
+    /// from the session card down into the focus circle. Shared with the embedded RecordingPage.
+    @State private var isFocusExpanded = false
     // Safe-area insets, read once, so the camera card lines up under the header / above
     // the tab bar while the camera itself ignores the safe area (to animate to full screen).
     @State private var safeTop: CGFloat = 47
@@ -56,20 +60,41 @@ struct HomePage: View {
             RecordingBackground()
                 .opacity(sessionActive ? 1 : 0)
 
-            // 2. The single, persistent camera. Its frame animates from the home card to
-            //    the (still framed) recording view — it grows but stays inset & rounded.
-            CameraPreview(session: sessionRecording.captureSession)
-                .clipShape(RoundedRectangle(cornerRadius: sessionActive ? 30 : 34, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: sessionActive ? 30 : 34, style: .continuous)
-                        .strokeBorder(Color.black.opacity(0.5), lineWidth: 3)
-                }
-                // Active frame: top sits 6pt below the countdown housing (~safeTop+8, ~100 tall),
-                // bottom sits 6pt below the pause button (its outer edge is ~safeBottom+24).
-                .padding(.top, sessionActive ? safeTop + 60 : safeTop + 120)
-                .padding(.bottom, sessionActive ? safeBottom + 28 : safeBottom + 122)
-                .padding(.horizontal, sessionActive ? 12 : 16)
-                .ignoresSafeArea()
+            // 2. The single, persistent camera — ONE preview layer for the whole app so it
+            //    never fights another layer for the feed. Its frame animates across three
+            //    states: home card → full session card → focus circle.
+            GeometryReader { geo in
+                let circleSize: CGFloat = 164
+                let isCircle = sessionActive && isFocusExpanded
+
+                // Card insets (home vs in-session), measured from the screen edges. Active
+                // frame: top sits 6pt below the countdown housing; bottom 6pt below pause.
+                let topInset = sessionActive ? safeTop + 60 : safeTop + 120
+                let bottomInset = sessionActive ? safeBottom + 28 : safeBottom + 122
+                let hInset: CGFloat = sessionActive ? 12 : 16
+
+                let cardW = max(geo.size.width - hInset * 2, 0)
+                let cardH = max(geo.size.height - topInset - bottomInset, 0)
+
+                let camW = isCircle ? circleSize : cardW
+                let camH = isCircle ? circleSize : cardH
+                let centerY = isCircle ? safeTop + 168 : topInset + cardH / 2
+                let corner: CGFloat = isCircle ? circleSize / 2 : (sessionActive ? 30 : 34)
+
+                CameraPreview(session: sessionRecording.captureSession)
+                    .frame(width: camW, height: camH)
+                    .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+                    .overlay {
+                        if !isCircle {
+                            RoundedRectangle(cornerRadius: corner, style: .continuous)
+                                .strokeBorder(Color.black.opacity(0.5), lineWidth: 3)
+                        }
+                    }
+                    .position(x: geo.size.width / 2, y: centerY)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.85), value: isFocusExpanded)
+                    .animation(transition, value: sessionActive)
+            }
+            .ignoresSafeArea()
 
             // 3. Home controls (header + duration picker + record + flip) — fade out.
             HomeControls(
@@ -89,9 +114,17 @@ struct HomePage: View {
 
             // 4. Recording controls, hosted in place over the now-full-screen camera.
             if sessionActive {
-                RecordingPage(autoStart: true, embedded: true, onExit: endSession)
-                    .hidesFloatingTabBar()
-                    .transition(.opacity)
+                RecordingPage(
+                    autoStart: true,
+                    embedded: true,
+                    isExpanded: $isFocusExpanded,
+                    onExit: {
+                        isFocusExpanded = false   // reset focus state when the session ends
+                        endSession()
+                    }
+                )
+                .hidesFloatingTabBar()
+                .transition(.opacity)
             }
         }
         .background(safeAreaReader)

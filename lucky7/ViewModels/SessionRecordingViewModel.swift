@@ -147,7 +147,7 @@ final class SessionRecordingViewModel: ObservableObject {
                 self.exportEngine.generateWrappedVideo(
                     rawVideoURL: rawURL,
                     capturedFrameCount: result.frameCount,
-                    overlay: self.makeOverlay(frameCount: result.frameCount),
+                    overlay: self.makeOverlay(durationSeconds: wallClock),
                     sessionWallClockSeconds: wallClock > 0 ? wallClock : nil,
                     plannedSessionSeconds: planned > 0 ? planned : nil
                 ) { [weak self] finalURL in
@@ -264,13 +264,9 @@ final class SessionRecordingViewModel: ObservableObject {
         return images
     }
 
-    private func makeOverlay(frameCount: Int, title: String = "Untitled session") -> ExportEngine.WrappedVideoOverlay {
-        // Duration based on frames @ 60fps.
-        let seconds = AppConstants.wrappedDurationSeconds(frameCount: frameCount)
-        let total = max(Int(seconds.rounded()), 1)
-        let mins = total / 60
-        let secs = total % 60
-        let durationCompact = mins > 0 ? "\(mins)m" : "\(secs)s"
+    private func makeOverlay(durationSeconds: TimeInterval, title: String = "Untitled session") -> ExportEngine.WrappedVideoOverlay {
+        // Big number = the actual focus length of the session (not the short timelapse).
+        let durationText = TimeFormatter.shortDuration(max(durationSeconds, 0))
 
         let dateFormatter = DateFormatter()
         dateFormatter.locale = .current
@@ -278,23 +274,24 @@ final class SessionRecordingViewModel: ObservableObject {
         let date = dateFormatter.string(from: Date())
 
         return ExportEngine.WrappedVideoOverlay(
-            titleTop: title,
-            durationCenter: durationCompact,
-            dateCenter: date,
-            footer: title.isEmpty ? "Untitled session" : title
+            header: title.isEmpty ? "Untitled session" : title,
+            duration: durationText,
+            subtitle: date
         )
     }
 
     /// Re-renders the session wrap with the user's title (entered after the first export)
     /// and saves the titled version to Photos.
-    func reexportWithTitle(_ title: String) {
+    func reexportWithTitle(_ title: String, durationSeconds: TimeInterval = 0) {
         guard let raw = retainedRawURL else { return }
         retainedRawURL = nil
         isExporting = true
+        // Prefer the session's actual duration; fall back to the recorded wall-clock.
+        let secs = durationSeconds > 0 ? durationSeconds : recordedWallClockSeconds
         exportEngine.generateWrappedVideo(
             rawVideoURL: raw,
             capturedFrameCount: lastExportFrameCount,
-            overlay: makeOverlay(frameCount: lastExportFrameCount, title: title)
+            overlay: makeOverlay(durationSeconds: secs, title: title)
         ) { [weak self] finalURL in
             Task { @MainActor in
                 guard let self else { return }

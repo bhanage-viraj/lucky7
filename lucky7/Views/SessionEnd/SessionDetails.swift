@@ -267,6 +267,7 @@ struct SessionDetails: View {
     }
 
     private func saveSession() {
+        var sessionDuration: TimeInterval = 0
         if let session = sessions.first(where: { $0.id == sessionId }) {
             session.title = sessionTitle
             session.summary = sessionDescription
@@ -279,12 +280,17 @@ struct SessionDetails: View {
             if let rawPath = sessionRecording.rawClipURL?.path {
                 session.rawClipPath = rawPath
             }
+            sessionDuration = session.actualDuration
             try? context.save()
         }
         // Re-render the wrap with the chosen title (the first export ran before the title
         // existed). FinishSessionScreen's finalVideoURL observer then updates wrappedVideoPath.
+        // Burn in the session's actual focus duration as the hero number.
         let trimmed = sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        sessionRecording.reexportWithTitle(trimmed.isEmpty ? "Untitled session" : trimmed)
+        sessionRecording.reexportWithTitle(
+            trimmed.isEmpty ? "Untitled session" : trimmed,
+            durationSeconds: sessionDuration
+        )
         onSave?()
     }
 }

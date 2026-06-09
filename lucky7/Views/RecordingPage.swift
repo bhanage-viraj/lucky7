@@ -16,15 +16,20 @@ struct RecordingPage: View {
     /// the camera is ready, instead of waiting for the on-screen START button.
     var autoStart: Bool = false
 
-    /// When true, RecordingPage is hosted *in place* inside HomePage (the camera frame
-    /// enlarges there) rather than pushed. In that mode it draws no camera of its own
-    /// (HomePage owns the shared preview) and ends the session via `onExit` instead of
-    /// popping a navigation stack.
+    /// When true, RecordingPage is hosted *in place* inside HomePage rather than pushed.
+    /// In that mode HomePage owns the one shared camera preview for the whole app (two
+    /// `AVCaptureVideoPreviewLayer`s on a single session fight for the feed and one goes
+    /// black), and morphs ITS camera into the focus circle — so this view draws no camera
+    /// of its own. It ends the session via `onExit` instead of popping a navigation stack.
     var embedded: Bool = false
+
+    /// Drives the expanded full-focus layout. A binding so an embedded host (HomePage) can
+    /// morph its shared camera into the focus circle in lock-step with this view's chrome.
+    @Binding var isExpanded: Bool
+
     var onExit: (() -> Void)? = nil
 
     @State private var hasStarted = false
-    @State private var showFullFocusScreen = false
     @State private var showEndConfirm = false
     @State private var showCrashSession = false
     @State private var showNotifNudge = false
@@ -64,10 +69,40 @@ struct RecordingPage: View {
 
         ZStack {
 
+            // Expanded background — full-focus mode. Standalone only; when embedded,
+            // HomePage draws the session background beneath its shared camera.
             if !embedded {
-                CameraPreview(session: sessionRecording.captureSession)
-                    .ignoresSafeArea()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                RecordingBackground()
+                    .opacity(isExpanded ? 1 : 0)
+            }
+
+            // Camera preview — STANDALONE ONLY. Morphs between full-screen fill and the
+            // focus circle. When embedded, HomePage owns the single shared preview layer
+            // and morphs it into the circle itself, so we draw no camera here.
+            if !embedded {
+                GeometryReader { geo in
+                    let circleSize: CGFloat = 164
+                    let cameraW: CGFloat = isExpanded ? circleSize : geo.size.width
+                    let cameraH: CGFloat = isExpanded ? circleSize : geo.size.height
+                    let camCenterY: CGFloat = isExpanded
+                        ? geo.safeAreaInsets.top + 168
+                        : geo.size.height / 2
+
+                    ZStack {
+                        // Drop-shadow behind the camera circle (expanded only)
+                        Circle()
+                            .fill(Color.black)
+                            .frame(width: circleSize, height: circleSize)
+                            .position(x: geo.size.width / 2, y: camCenterY + 10)
+                            .opacity(isExpanded ? 1 : 0)
+
+                        CameraPreview(session: sessionRecording.captureSession)
+                            .frame(width: cameraW, height: cameraH)
+                            .clipShape(RoundedRectangle(cornerRadius: isExpanded ? circleSize / 2 : 0))
+                            .position(x: geo.size.width / 2, y: camCenterY)
+                    }
+                }
+                .ignoresSafeArea()
             }
 
             VStack {
@@ -128,7 +163,8 @@ struct RecordingPage: View {
                     Spacer()
 
                     // EXPAND — fullscreen focus view
-                    Button(action: { showFullFocusScreen = true }) {
+                    // EXPAND — full-focus view (same camera, different chrome)
+                    Button(action: { withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) { isExpanded = true } }) {
                         Circle()
                             .fill(.ultraThinMaterial)
                             .frame(width: 60, height: 60)
@@ -142,6 +178,13 @@ struct RecordingPage: View {
                 .padding(.horizontal, 44)
                 .padding(.bottom, 24)
             }
+            .opacity(isExpanded ? 0 : 1)
+            .allowsHitTesting(!isExpanded)
+
+            // ── Expanded (full-focus) overlay ─────────────────
+            expandedSessionOverlay
+                .opacity(isExpanded ? 1 : 0)
+                .allowsHitTesting(isExpanded)
 
             if sessionRecording.isExporting {
                 Color.black.opacity(0.55)
@@ -193,6 +236,7 @@ struct RecordingPage: View {
                 Spacer()
             }
             .padding(.top, 132)   // floating recording/paused indicator below the housing
+            .opacity(isExpanded ? 0 : 1)
 
             if showEndConfirm {
                 EndSessionConfirm(
@@ -324,9 +368,7 @@ struct RecordingPage: View {
             sessionTimer.requestReturnToHome = false
             exitToHomeFromSessionFlow()
         }
-        .fullScreenCover(isPresented: $showFullFocusScreen) {
-            FullFocusScreen()
-        }
+
         .fullScreenCover(isPresented: $sessionTimer.showFinishSession) {
             FinishSessionScreen(onFlowComplete: exitToHomeFromSessionFlow)
         }
@@ -358,6 +400,129 @@ struct RecordingPage: View {
             }
             // sheet stays put until they actually submit or cancel — no swipe-away
             .interactiveDismissDisabled()
+        }
+    }
+
+    // MARK: - Expanded (full-focus) overlay
+
+    @ViewBuilder
+    private var expandedSessionOverlay: some View {
+        VStack(spacing: 0) {
+            Color.clear.frame(height: 24)
+
+            // Paused badge (top-left)
+            HStack {
+                Text("PAUSED")
+                    .foregroundStyle(.white)
+                    .font(.system(size: 14))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(Color(.canvasRed))
+                    )
+                    .opacity(sessionTimer.isRunning ? 0 : 1)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.horizontal, 12)
+
+            Color.clear.frame(height: 40)
+
+            // Space for the camera circle (rendered in the camera layer)
+            Color.clear.frame(height: 164)
+
+            // Traffic-light timer
+            ZStack(alignment: .center) {
+                if !sessionTimer.isRunning {
+                    Image(.redYellowGreen)
+                        .frame(height: 136)
+                }
+
+                Image(.trafficLight)
+
+                HStack {
+                    Text("\(sessionTimer.hours)")
+                        .font(.custom("Special Gothic Expanded One", size: 34))
+                        .frame(width: 104, height: 102)
+
+                    Text(String(format: "%02d", sessionTimer.minutes))
+                        .font(.custom("Special Gothic Expanded One", size: 34))
+                        .frame(width: 104, height: 102)
+
+                    Text(String(format: "%02d", sessionTimer.seconds))
+                        .font(.custom("Special Gothic Expanded One", size: 34))
+                        .frame(width: 110, height: 102)
+                        .clipped()
+                }
+                .foregroundStyle(.white)
+                .frame(height: 136)
+                .zIndex(2.0)
+                .offset(y: -8)
+            }
+            .padding(.top, 36)
+
+            Spacer()
+
+            VStack(alignment: .center) {
+                Text("Tips:")
+                Text("Don't forget to take break")
+            }
+            .opacity(0.5)
+            .foregroundStyle(.white)
+
+            Spacer()
+
+            // Bottom control bar — same actions as minimized, different style
+            HStack {
+                // STOP
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) { showEndConfirm = true }
+                }) {
+                    ZStack {
+                        Circle()
+                            .fill(.white.opacity(0.75))
+                            .frame(width: 56, height: 56)
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(.red)
+                            .frame(width: 20, height: 20)
+                    }
+                }
+
+                Spacer()
+
+                // PAUSE / RESUME (uses the unified togglePauseResume)
+                Button(action: togglePauseResume) {
+                    ZStack {
+                        Circle()
+                            .fill(.white.opacity(0.75))
+                            .frame(width: 100, height: 100)
+                        Image(systemName: sessionTimer.isRunning ? "pause.fill" : "play.fill")
+                            .font(.system(size: 36))
+                            .foregroundStyle(.black)
+                    }
+                }
+
+                Spacer()
+
+                // MINIMIZE — shrink back to the recording page layout
+                Button(action: {
+                    withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+                        isExpanded = false
+                    }
+                }) {
+                    ZStack {
+                        Circle()
+                            .fill(.white.opacity(0.75))
+                            .frame(width: 56, height: 56)
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.black)
+                    }
+                }
+            }
+            .padding(.horizontal, 24)
+
+            Color.clear.frame(height: 16)
         }
     }
 
@@ -464,7 +629,7 @@ struct RecordingPage: View {
         transaction.disablesAnimations = true
         withTransaction(transaction) {
             showCrashSession = false
-            showFullFocusScreen = false
+            isExpanded = false
             sessionTimer.showFinishSession = false
         }
         sessionTimer.pause()
@@ -697,7 +862,7 @@ class PreviewView: UIView {
 
 
 #Preview {
-    RecordingPage()
+    RecordingPage(isExpanded: .constant(false))
         .environmentObject(SessionTimerViewModel())
         .environmentObject(SessionRecordingViewModel())
         .environmentObject(FocusViewModel())

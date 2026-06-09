@@ -175,6 +175,17 @@ struct WrappedVideoScreen: View {
                 player?.play()
             }
         }
+        // The session wrap is re-exported with the title a moment after saving (and
+        // weekly/monthly wraps finish rendering asynchronously). When the final file
+        // lands, `wrappedVideoPath` updates → swap the player to it so we stop showing
+        // the earlier "Untitled session" export.
+        .onChange(of: videoURL) { _, newURL in
+            guard let newURL, newURL != (player?.currentItem?.asset as? AVURLAsset)?.url else { return }
+            player = AVPlayer(url: newURL)
+            player?.play()
+            isPlaying = true
+            didFinish = false
+        }
         .onDisappear {
             player?.pause()
             player = nil
