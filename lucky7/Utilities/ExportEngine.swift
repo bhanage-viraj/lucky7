@@ -256,10 +256,13 @@ final class ExportEngine {
     // MARK: - Portrait output + overlay
 
     struct WrappedVideoOverlay {
-        let titleTop: String
-        let durationCenter: String
-        let dateCenter: String
-        let footer: String
+        /// Top line — the session title, the week's date range, or "<Month> Rewind".
+        let header: String
+        /// Large hero line — total focus duration, e.g. "3h 20m".
+        let duration: String
+        /// Small line under the duration — the date for session wraps. Empty hides it,
+        /// so weekly/monthly wraps show only header + duration.
+        let subtitle: String
     }
 
     private func makePortraitVideoComposition(
@@ -364,36 +367,44 @@ final class ExportEngine {
             return t
         }
 
-        // (No title at the top.)
+        // The Core Animation canvas used by AVVideoCompositionCoreAnimationTool has a
+        // BOTTOM-LEFT origin: a layer's frame.y is its BOTTOM edge and larger y sits higher
+        // on screen. So to stack header → duration → date from the TOP, we anchor the header
+        // near the top (high y) and step y DOWN for each following line.
+        let contentWidth = renderSize.width - padding * 2
+        let topMargin = renderSize.height * 0.06
 
-        // Duration + date — a bit smaller and lower in the frame.
+        // 1. Header — session title, week range, or "<Month> Rewind" (topmost line).
+        let headerFont = gothic(maxSide * 0.040)
+        let headerHeight = headerFont.pointSize * 1.4
+        let headerY = renderSize.height - topMargin - headerHeight
+        layer.addSublayer(textLayer(
+            overlay.header, font: headerFont,
+            frame: CGRect(x: padding, y: headerY, width: contentWidth, height: headerHeight),
+            alpha: 1
+        ))
+
+        // 2. Duration — the large hero line, just below the header.
         let durationFont = gothic(maxSide * 0.085)
-        let durationFrame = CGRect(
-            x: padding,
-            y: renderSize.height * 0.42,
-            width: renderSize.width - padding * 2,
-            height: durationFont.pointSize * 1.05
-        )
-        layer.addSublayer(textLayer(overlay.durationCenter, font: durationFont, frame: durationFrame, alpha: 1))
+        let durationHeight = durationFont.pointSize * 1.15
+        let durationY = headerY - maxSide * 0.006 - durationHeight
+        layer.addSublayer(textLayer(
+            overlay.duration, font: durationFont,
+            frame: CGRect(x: padding, y: durationY, width: contentWidth, height: durationHeight),
+            alpha: 1
+        ))
 
-        let dateFont = gothic(maxSide * 0.026)
-        let dateFrame = CGRect(
-            x: padding,
-            y: durationFrame.maxY,
-            width: renderSize.width - padding * 2,
-            height: dateFont.pointSize * 1.4
-        )
-        layer.addSublayer(textLayer(overlay.dateCenter.uppercased(), font: dateFont, frame: dateFrame, alpha: 0.85))
-
-        // BOTTOM: the session / period title (no more "RUSH HOUR • time").
-        let titleFont = gothic(maxSide * 0.045)
-        let titleFrame = CGRect(
-            x: padding,
-            y: renderSize.height - padding - titleFont.pointSize * 1.8,
-            width: renderSize.width - padding * 2,
-            height: titleFont.pointSize * 1.8
-        )
-        layer.addSublayer(textLayer(overlay.footer, font: titleFont, frame: titleFrame, alpha: 1))
+        // 3. Subtitle (date) — session wraps only; empty on weekly/monthly so it's skipped.
+        if !overlay.subtitle.isEmpty {
+            let dateFont = gothic(maxSide * 0.026)
+            let dateHeight = dateFont.pointSize * 1.4
+            let dateY = durationY - maxSide * 0.004 - dateHeight
+            layer.addSublayer(textLayer(
+                overlay.subtitle, font: dateFont,
+                frame: CGRect(x: padding, y: dateY, width: contentWidth, height: dateHeight),
+                alpha: 0.9
+            ))
+        }
 
         return layer
     }

@@ -106,11 +106,22 @@ enum WrapRollupService {
 
         let totalFocus = sessions.reduce(0.0) { $0 + $1.actualDuration }
         let count = sessions.count
+
+        // Header: weekly → the week's date range; monthly → "<Month> Rewind".
+        let header: String
+        if kind == "monthly" {
+            let mf = DateFormatter()
+            mf.locale = .current
+            mf.dateFormat = "MMMM"
+            header = "\(mf.string(from: start)) Rewind"
+        } else {
+            header = label
+        }
+
         let overlay = ExportEngine.WrappedVideoOverlay(
-            titleTop: "",
-            durationCenter: TimeFormatter.shortDuration(totalFocus),
-            dateCenter: label,
-            footer: "RUSH HOUR • \(count) SESSION\(count == 1 ? "" : "S")"
+            header: header,
+            duration: TimeFormatter.shortDuration(totalFocus),
+            subtitle: ""
         )
 
         let maxDuration: Double = (kind == "weekly") ? 45 : 60
