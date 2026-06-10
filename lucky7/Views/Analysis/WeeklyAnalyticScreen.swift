@@ -140,17 +140,17 @@ struct WeeklyAnalyticScreen: View {
 
     private var sessionStats: [[String: String]] {
         [
-            ["title1": "FOCUS DURATION",
+            ["title1": "Focus Duration",
              "value1": TimeFormatter.shortDuration(totalFocus),
-             "title2": "DISTRACTED DURATION",
+             "title2": "Distracted Duration",
              "value2": TimeFormatter.shortDuration(totalDistracted)],
-            ["title1": "AVG SESSION LENGTH",
+            ["title1": "Avg Session",
              "value1": minutesText(avgSessionLength),
-             "title2": "AVG DISTRACTED LENGTH",
+             "title2": "Avg Distracted",
              "value2": minutesText(avgDistractedLength)],
-            ["title1": "SESSION COMPLETED",
+            ["title1": "Session Completed",
              "value1": "\(sessions.count) times",
-             "title2": "DISTRACTED FREQUENCY",
+             "title2": "Distracted Frequency",
              "value2": "\(weekDistractions.count) times"],
         ]
     }

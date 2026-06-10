@@ -10,32 +10,36 @@ import SwiftUI
 struct BarChartView: View {
     let data: [BarChartData]
     var config: BarChartConfig = BarChartConfig()
-
+    
     var body: some View {
         VStack(spacing: 0) {
-            if config.showLegend {
-                legendView
-                    .padding(.bottom, 16)
-            }
-
+            
             HStack(alignment: .bottom, spacing: 0) {
                 if config.showYAxis {
                     yAxisView
                         .padding(.bottom, 24)
                 }
-
+                
                 GeometryReader { geo in
                     let chartHeight = geo.size.height - 24
-
+                    
                     ZStack(alignment: .bottomLeading) {
                         gridLinesView(height: chartHeight)
                         barsView(height: chartHeight)
                     }
                 }
             }
+            
+            Divider()
+                .padding(.vertical, 20)
+            
+            if config.showLegend {
+                legendView
+                    .padding(.bottom, 16)
+            }
         }
     }
-
+    
     // MARK: - Subviews
     private var legendView: some View {
         HStack(spacing: 24) {
@@ -44,7 +48,7 @@ struct BarChartView: View {
             Spacer()
         }
     }
-
+    
     private var yAxisView: some View {
         VStack(alignment: .trailing, spacing: 0) {
             ForEach(config.gridLines, id: \.self) { val in
@@ -56,7 +60,7 @@ struct BarChartView: View {
         }
         .frame(width: 40)
     }
-
+    
     private func gridLinesView(height: CGFloat) -> some View {
         VStack(spacing: 0) {
             ForEach(config.gridLines, id: \.self) { _ in
@@ -68,7 +72,7 @@ struct BarChartView: View {
         .frame(height: height)
         .frame(maxWidth: .infinity)
     }
-
+    
     private func barsView(height: CGFloat) -> some View {
         HStack(alignment: .bottom, spacing: 0) {
             ForEach(data) { item in
@@ -83,12 +87,12 @@ struct BarChartView: View {
                                     height: CGFloat(item.primary / config.maxValue) * height
                                 )
                         }
-
+                        
                         // Secondary bar (stacked on top)
                         if item.secondary > 0 {
                             let totalHeight = CGFloat((item.primary + item.secondary) / config.maxValue) * height
                             let secondaryHeight = CGFloat(item.secondary / config.maxValue) * height
-
+                            
                             Capsule()
                                 .fill(config.secondaryColor)
                                 .frame(width: config.barWidth, height: totalHeight)
@@ -98,12 +102,12 @@ struct BarChartView: View {
                                             .frame(width: config.barWidth, height: secondaryHeight)
                                         Spacer(minLength: 0)
                                     }
-                                    .frame(height: totalHeight)
+                                        .frame(height: totalHeight)
                                 )
                         }
                     }
                     .frame(height: height, alignment: .bottom)
-
+                    
                     Text(item.label)
                         .font(.system(size: 14))
                         .foregroundColor(.gray)
@@ -117,7 +121,7 @@ struct BarChartView: View {
         .accessibilityValue(chartSummary)
         .accessibilityHint("Shows focused and distracted time for each day")
     }
-
+    
     private var chartSummary: String {
         data.map { day in
             "\(day.label): \(Int(day.primary)) minutes focused, \(Int(day.secondary)) minutes distracted"
