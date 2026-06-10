@@ -108,12 +108,14 @@ struct MonitorScreen: View {
                     .font(.system(size: 19))
                     .foregroundColor(.white)
             }
+            .accessibilityHidden(true)
 
             Spacer()
 
             Text("My Sessions")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundColor(.white)
+                .accessibilityAddTraits(.isHeader)
 
             Spacer()
 
@@ -124,6 +126,9 @@ struct MonitorScreen: View {
                     .font(.system(size: 19, weight: .bold))
                     .foregroundColor(.white)
             }
+            .accessibilityLabel("Search sessions")
+            .accessibilityHint("Search by title or date")
+            .accessibilityInputLabels(["search", "find session"])
         }
         .padding(.horizontal, 24)
         .padding(.top, 36)
@@ -179,6 +184,7 @@ struct MonitorScreen: View {
             Image(systemName: "play.tv")
                 .font(.system(size: 36))
                 .foregroundColor(.white.opacity(0.7))
+                .accessibilityDecorative()
             Text("No sessions yet")
                 .font(.custom("Special Gothic Expanded One", size: 23))
                 .foregroundColor(.white)
@@ -275,6 +281,9 @@ struct WeekCard: View {
                     .background(Capsule().fill(Color.black))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("\(week.title) analytics")
+                .accessibilityHint("Opens weekly focus statistics")
+                .accessibilityInputLabels(["week \(week.number)", "analytics", "week analytics"])
 
                 Spacer()
 
@@ -296,6 +305,9 @@ struct WeekCard: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(isExpanded ? "Collapse \(week.title)" : "Expand \(week.title)")
+                .accessibilityValue(TimeFormatter.longDuration(week.totalDuration))
+                .accessibilityHint(week.isCurrent ? "Current week is always expanded" : "Shows or hides sessions in this week")
             }
             .padding(16)
 
@@ -312,6 +324,7 @@ struct WeekCard: View {
                         SessionRow(session: session, showsCard: false)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityHint("Opens session analytics and video")
                 }
             }
         }
@@ -436,6 +449,10 @@ struct SessionRow: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 16)
         .background(cardBackground)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(titleText), \(monthText) \(dayText)")
+        .accessibilityValue(TimeFormatter.longDuration(session.actualDuration))
+        .accessibilityAddTraits(.isButton)
     }
 
     @ViewBuilder
@@ -490,6 +507,9 @@ struct RewindRow: View {
                     )
                 )
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title), \(duration)")
+        .accessibilityHint("Plays the monthly session rewind video")
     }
 }
 

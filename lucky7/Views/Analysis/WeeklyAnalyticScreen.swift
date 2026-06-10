@@ -298,9 +298,12 @@ struct WeeklyAnalyticScreen: View {
                 }
                 .disabled(!canGoBack)
                 .opacity(canGoBack ? 1 : 0.35)
+                .accessibilityLabel("Previous week")
+                .accessibilityInputLabels(["previous week", "back"])
 
                 Text(weekRangeLabel)
                     .font(.system(size: 14, weight: .semibold))
+                    .accessibilityHidden(true)
 
                 Button { changeWeek(by: 1) } label: {
                     Image(systemName: "chevron.right")
@@ -308,11 +311,16 @@ struct WeeklyAnalyticScreen: View {
                 }
                 .disabled(isAtCurrentWeek)
                 .opacity(isAtCurrentWeek ? 0.35 : 1)
+                .accessibilityLabel("Next week")
+                .accessibilityInputLabels(["next week", "forward"])
             }
             .foregroundColor(.white)
             .padding(.horizontal, 18)
             .padding(.vertical, 9)
             .background(Capsule().fill(Color.black))
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Week selector")
+            .accessibilityValue(weekRangeLabel)
 
             // Back button, leading.
             HStack {
@@ -321,6 +329,8 @@ struct WeeklyAnalyticScreen: View {
                         .font(.system(size: 20, weight: .bold))
                         .foregroundColor(.white)
                 }
+                .accessibilityLabel("Back")
+                .accessibilityInputLabels(["back", "go back"])
                 Spacer()
             }
         }

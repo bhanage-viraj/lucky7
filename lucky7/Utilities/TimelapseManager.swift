@@ -38,6 +38,8 @@ final class TimelapseManager: NSObject {
 
     private(set) var outputURL: URL?
     private(set) var lastCapturedFrameCount = 0
+    /// Frames captured in the current or most recent recording session.
+    var currentFrameCount: Int { framesCaptured }
 
     var captureSession: AVCaptureSession { session }
 
@@ -292,7 +294,7 @@ final class TimelapseManager: NSObject {
         CMTime(value: CMTimeValue(index), timescale: CMTimeScale(AppConstants.wrappedOutputFPS))
     }
 
-    private func setupWriterIfNeeded(from sampleBuffer: CMSampleBuffer) -> Bool {
+    private func setupWriterIfNeeded(from sampleBuffer: CMSampleBuffer) async -> Bool {
         guard let writer = assetWriter, writer.status == .unknown else {
             return isWriterReady
         }
@@ -312,7 +314,7 @@ final class TimelapseManager: NSObject {
 
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
         input.expectsMediaDataInRealTime = true
-        input.transform = VideoOrientationHelper.writerTransform(
+        input.transform = await VideoOrientationHelper.writerTransform(
             bufferWidth: width,
             bufferHeight: height,
             cameraPosition: currentPosition()
@@ -340,7 +342,7 @@ final class TimelapseManager: NSObject {
         return true
     }
 
-    private func appendFrame(from sampleBuffer: CMSampleBuffer) {
+    private func appendFrame(from sampleBuffer: CMSampleBuffer) async {
         guard isRecording, !capturePaused, let writer = assetWriter else { return }
         guard writer.status != .failed else { return }
 
@@ -349,7 +351,7 @@ final class TimelapseManager: NSObject {
         lastSamplePTS = timestamp
 
         if !isWriterReady {
-            guard setupWriterIfNeeded(from: sampleBuffer) else { return }
+            guard await setupWriterIfNeeded(from: sampleBuffer) else { return }
         }
 
         guard writer.status == .writing,
@@ -378,6 +380,8 @@ extension TimelapseManager: AVCaptureVideoDataOutputSampleBufferDelegate {
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        appendFrame(from: sampleBuffer)
+        Task { [weak self] in
+            await self?.appendFrame(from: sampleBuffer)
+        }
     }
 }

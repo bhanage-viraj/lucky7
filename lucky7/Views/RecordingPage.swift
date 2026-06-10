@@ -100,6 +100,20 @@ struct RecordingPage: View {
                             .frame(width: cameraW, height: cameraH)
                             .clipShape(RoundedRectangle(cornerRadius: isExpanded ? circleSize / 2 : 0))
                             .position(x: geo.size.width / 2, y: camCenterY)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel("Camera preview")
+                            .accessibilityHint("Live timelapse camera feed")
+                            .accessibilityValue(
+                                AccessibilitySupport.cameraPreviewValue(
+                                    isRecording: sessionRecording.isRecording,
+                                    isPaused: hasStarted && !sessionTimer.isRunning,
+                                    frameCount: sessionRecording.capturedFrameCount,
+                                    remainingHours: sessionTimer.hours,
+                                    remainingMinutes: sessionTimer.minutes,
+                                    remainingSeconds: sessionTimer.seconds
+                                )
+                            )
+                            .accessibilityAddTraits(.updatesFrequently)
                     }
                 }
                 .ignoresSafeArea()
@@ -118,6 +132,7 @@ struct RecordingPage: View {
                             .opacity(0.85)
                             .offset(y: 28)
                             .allowsHitTesting(false)
+                            .accessibilityDecorative()
                             .transition(.opacity)
                     }
 
@@ -144,6 +159,9 @@ struct RecordingPage: View {
                                     .frame(width: 22, height: 22)
                             }
                     }
+                    .accessibilityLabel("End session")
+                    .accessibilityHint("Stops recording and ends your focus session early")
+                    .accessibilityInputLabels(["stop", "end session", "stop recording", "end timelapse"])
 
                     Spacer()
 
@@ -159,6 +177,11 @@ struct RecordingPage: View {
                             }
                             .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
                     }
+                    .accessibilityLabel(sessionTimer.isRunning ? "Pause session" : "Resume session")
+                    .accessibilityHint(sessionTimer.isRunning ? "Pauses the timer and timelapse recording" : "Resumes the timer and timelapse recording")
+                    .accessibilityInputLabels(sessionTimer.isRunning
+                        ? ["pause", "pause session", "pause recording"]
+                        : ["resume", "play", "resume session", "continue recording"])
 
                     Spacer()
 
@@ -174,6 +197,9 @@ struct RecordingPage: View {
                                     .foregroundStyle(.white)
                             }
                     }
+                    .accessibilityLabel("Enter full focus mode")
+                    .accessibilityHint("Shows a larger timer with fewer distractions")
+                    .accessibilityInputLabels(["expand", "full focus", "focus mode", "fullscreen"])
                 }
                 .padding(.horizontal, 44)
                 .padding(.bottom, 24)
@@ -189,6 +215,7 @@ struct RecordingPage: View {
             if sessionRecording.isExporting {
                 Color.black.opacity(0.55)
                     .ignoresSafeArea()
+                    .accessibilityDecorative()
                 VStack(spacing: 16) {
                     ProgressView()
                         .tint(.white)
@@ -197,6 +224,9 @@ struct RecordingPage: View {
                         .font(.custom("Special Gothic Expanded One", size: 16))
                         .foregroundColor(.white)
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Saving your video")
+                .accessibilityAddTraits(.updatesFrequently)
             }
 
             if sessionRecording.permissionDenied {
@@ -209,6 +239,9 @@ struct RecordingPage: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black.opacity(0.7))
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Camera access required")
+                .accessibilityValue("Camera access is required to record your timelapse. Enable camera in Settings.")
             }
 
             VStack {
@@ -231,6 +264,12 @@ struct RecordingPage: View {
                     .padding(.vertical, 7)
                     .background(sessionTimer.isRunning ? Color.red : Color(white: 0.26), in: Capsule())
                     .animation(.easeInOut(duration: 0.2), value: sessionTimer.isRunning)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(sessionTimer.isRunning ? "Recording in progress" : "Recording paused")
+                    .accessibilityValue(
+                        "\(sessionRecording.capturedFrameCount) frames captured. \(AccessibilitySupport.spokenCountdown(hours: sessionTimer.hours, minutes: sessionTimer.minutes, seconds: sessionTimer.seconds))"
+                    )
+                    .accessibilityAddTraits(.updatesFrequently)
                 }
 
                 Spacer()
@@ -250,8 +289,10 @@ struct RecordingPage: View {
                 )
                 .transition(.opacity)
                 .zIndex(20)
+                .accessibilityAddTraits(.isModal)
             }
         }
+        .accessibilityAnnounce(when: sessionRecording.isExporting, message: "Saving your video")
         #if os(iOS)
         .toolbar(.hidden, for: .tabBar)   // recording is a full-screen mode — keep the tab bar on the home page only
         #endif
@@ -422,6 +463,8 @@ struct RecordingPage: View {
                             .fill(Color(.canvasRed))
                     )
                     .opacity(sessionTimer.isRunning ? 0 : 1)
+                    .accessibilityHidden(sessionTimer.isRunning)
+                    .accessibilityLabel("Paused")
             }
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.horizontal, 12)
@@ -436,9 +479,11 @@ struct RecordingPage: View {
                 if !sessionTimer.isRunning {
                     Image(.redYellowGreen)
                         .frame(height: 136)
+                        .accessibilityDecorative()
                 }
 
                 Image(.trafficLight)
+                    .accessibilityDecorative()
 
                 HStack {
                     Text("\(sessionTimer.hours)")
@@ -459,6 +504,14 @@ struct RecordingPage: View {
                 .zIndex(2.0)
                 .offset(y: -8)
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Time remaining")
+            .accessibilityValue(AccessibilitySupport.spokenCountdown(
+                hours: sessionTimer.hours,
+                minutes: sessionTimer.minutes,
+                seconds: sessionTimer.seconds
+            ))
+            .accessibilityAddTraits(.updatesFrequently)
             .padding(.top, 36)
 
             Spacer()
@@ -469,6 +522,8 @@ struct RecordingPage: View {
             }
             .opacity(0.5)
             .foregroundStyle(.white)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Tip: Don't forget to take a break")
 
             Spacer()
 
@@ -487,6 +542,9 @@ struct RecordingPage: View {
                             .frame(width: 20, height: 20)
                     }
                 }
+                .accessibilityLabel("End session")
+                .accessibilityHint("Stops recording and ends your focus session early")
+                .accessibilityInputLabels(["stop", "end session", "stop recording"])
 
                 Spacer()
 
@@ -501,6 +559,8 @@ struct RecordingPage: View {
                             .foregroundStyle(.black)
                     }
                 }
+                .accessibilityLabel(sessionTimer.isRunning ? "Pause session" : "Resume session")
+                .accessibilityInputLabels(sessionTimer.isRunning ? ["pause"] : ["resume", "play"])
 
                 Spacer()
 
@@ -519,6 +579,9 @@ struct RecordingPage: View {
                             .foregroundStyle(.black)
                     }
                 }
+                .accessibilityLabel("Exit full focus mode")
+                .accessibilityHint("Returns to the standard recording layout")
+                .accessibilityInputLabels(["minimize", "exit focus", "collapse"])
             }
             .padding(.horizontal, 24)
 
@@ -730,6 +793,10 @@ private struct RecordingTrafficTimer: View {
                 )
                 .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
         )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Time remaining")
+        .accessibilityValue(AccessibilitySupport.spokenCountdown(hours: hours, minutes: minutes, seconds: seconds))
+        .accessibilityAddTraits(.updatesFrequently)
     }
 
     private func panel(text: String) -> some View {
@@ -738,6 +805,7 @@ private struct RecordingTrafficTimer: View {
             Image("Trafficshell1")
                 .resizable()
                 .frame(width: panelSize, height: h)
+                .accessibilityDecorative()
             Text(text)
                 .font(.system(size: 30, weight: .black, design: .rounded))
                 .italic()
@@ -758,6 +826,7 @@ struct EndSessionConfirm: View {
             Color.black.opacity(0.4)
                 .ignoresSafeArea()
                 .onTapGesture(perform: onCancel)
+                .accessibilityHidden(true)
 
             VStack(spacing: 0) {
                 Capsule()
@@ -773,6 +842,8 @@ struct EndSessionConfirm: View {
                             .foregroundStyle(Color.black.opacity(0.55))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
+                    .accessibilityHint("Cancels ending the session")
                 }
                 .padding(.horizontal, 18)
                 .padding(.top, 6)
@@ -798,6 +869,9 @@ struct EndSessionConfirm: View {
                             .overlay(Capsule().stroke(Color.red, lineWidth: 1.5))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("End session now")
+                    .accessibilityHint("Stops recording and ends your session early")
+                    .accessibilityInputLabels(["end", "confirm end", "stop session"])
 
                     Button(action: onCancel) {
                         Text("CANCEL")
@@ -808,6 +882,9 @@ struct EndSessionConfirm: View {
                             .background(Color.black, in: Capsule())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Cancel")
+                    .accessibilityHint("Continues your current session")
+                    .accessibilityInputLabels(["cancel", "keep going", "go back"])
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 22)
@@ -817,6 +894,8 @@ struct EndSessionConfirm: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 28)
             .shadow(color: .black.opacity(0.2), radius: 20, y: 8)
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isModal)
         }
     }
 }
@@ -855,7 +934,11 @@ class PreviewView: UIView {
         super.layoutSubviews()
         previewLayer.frame = bounds
         if let connection = previewLayer.connection {
-            VideoOrientationHelper.applyToCaptureConnection(connection)
+            // applyToCaptureConnection is async; layoutSubviews cannot be async.
+            // Run it asynchronously on the main actor.
+            Task { @MainActor in
+                await VideoOrientationHelper.applyToCaptureConnection(connection)
+            }
         }
     }
 }
@@ -868,3 +951,4 @@ class PreviewView: UIView {
         .environmentObject(FocusViewModel())
         .modelContainer(for: [Session.self, Distraction.self], inMemory: true)
 }
+
