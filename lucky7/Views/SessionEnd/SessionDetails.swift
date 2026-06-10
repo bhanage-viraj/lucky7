@@ -82,6 +82,7 @@ struct SessionDetails: View {
                 .scaledToFill()
                 .ignoresSafeArea()
                 .offset(y: -30)
+                .accessibilityDecorative()
 
             ScrollView {
                 VStack(spacing: 24) {
@@ -115,6 +116,8 @@ struct SessionDetails: View {
                         .padding(.vertical, 16)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .formFieldStyle()
+                        .accessibilityLabel("Session title")
+                        .accessibilityHint("Up to \(maxTitleLength) characters")
                         .onChange(of: sessionTitle) { _, newValue in
                             if newValue.count > maxTitleLength {
                                 sessionTitle = String(newValue.prefix(maxTitleLength))
@@ -135,6 +138,8 @@ struct SessionDetails: View {
                     .padding(.vertical, 14)
                     .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
                     .formFieldStyle()
+                    .accessibilityLabel("Session description")
+                    .accessibilityHint("How you felt during and after the session")
                 }
 
                 LabeledField(title: "ACTIVITIES SNAPSHOTS") {
@@ -169,6 +174,8 @@ struct SessionDetails: View {
                     .padding(.vertical, 34)
                 }
                 .formFieldStyle()
+                .accessibilityLabel("Add activity snapshots")
+                .accessibilityHint("Take a photo or choose from your library")
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -190,6 +197,7 @@ struct SessionDetails: View {
                                             .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
+                                    .accessibilityLabel("Remove snapshot \(index + 1)")
                                 }
                         }
 
@@ -206,6 +214,7 @@ struct SessionDetails: View {
                                             .fill(Color.black.opacity(0.06))
                                     )
                             }
+                            .accessibilityLabel("Add another snapshot")
                         }
                     }
                     .padding(12)
@@ -261,9 +270,11 @@ struct SessionDetails: View {
                 .padding(.vertical, 20)
                 .background(canSave ? saveButtonColor : saveButtonColor.opacity(0.5))
                 .clipShape(RoundedRectangle(cornerRadius: 30))
-                .shadow(color: .black.opacity(0.7), radius: 0, x: 0, y: 4)
         }
         .disabled(!canSave)
+        .accessibilityLabel("Save session")
+        .accessibilityHint(canSave ? "Saves your title and exports the session video" : "Add a title, description, or snapshot to save")
+        .accessibilityInputLabels(["save", "save session", "export"])
     }
 
     private func saveSession() {
@@ -456,6 +467,9 @@ struct SnapshotsView: View {
             }
         }
         .frame(height: 140)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Session video preview frames")
+        .accessibilityValue("\(images.count) preview frames")
     }
 }
 

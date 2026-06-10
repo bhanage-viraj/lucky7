@@ -7,18 +7,19 @@ import AVFoundation
 import UIKit
 
 enum VideoOrientationHelper {
-    static func currentInterfaceOrientation() -> UIInterfaceOrientation {
-        let scene = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first { $0.activationState == .foregroundActive }
-            ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
-
-        return scene?.interfaceOrientation ?? .portrait
+    static func currentInterfaceOrientation() async -> UIInterfaceOrientation {
+        // Always access UIApplication/UIScene on the main actor.
+        return await MainActor.run { () -> UIInterfaceOrientation in
+            let scenes = UIApplication.shared.connectedScenes
+            let windowScenes = scenes.compactMap { $0 as? UIWindowScene }
+            let active = windowScenes.first { $0.activationState == .foregroundActive }
+            return (active ?? windowScenes.first)?.interfaceOrientation ?? .portrait
+        }
     }
 
     /// Matches preview + recorded frames to how the user holds the phone.
-    static func applyToCaptureConnection(_ connection: AVCaptureConnection) {
-        let orientation = currentInterfaceOrientation()
+    static func applyToCaptureConnection(_ connection: AVCaptureConnection) async {
+        let orientation = await currentInterfaceOrientation()
         // Use `videoOrientation` instead of rotation angles.
         // This avoids inverted mappings across iOS versions/devices.
         if connection.isVideoOrientationSupported {
@@ -53,8 +54,8 @@ enum VideoOrientationHelper {
         bufferWidth: Int,
         bufferHeight: Int,
         cameraPosition: AVCaptureDevice.Position
-    ) -> CGAffineTransform {
-        let orientation = currentInterfaceOrientation()
+    ) async -> CGAffineTransform {
+        let orientation = await currentInterfaceOrientation()
         let width = CGFloat(bufferWidth)
         let height = CGFloat(bufferHeight)
         let isLandscapeBuffer = bufferWidth > bufferHeight

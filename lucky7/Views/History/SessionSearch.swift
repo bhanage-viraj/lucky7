@@ -75,6 +75,8 @@ struct SessionSearchView: View {
                     .focused($searchFocused)
                     .autocorrectionDisabled()
                     .submitLabel(.search)
+                    .accessibilityLabel("Search sessions")
+                    .accessibilityHint("Search by session title or date")
 
                 if !searchText.isEmpty {
                     Button {
@@ -84,6 +86,7 @@ struct SessionSearchView: View {
                             .font(.system(size: 18))
                             .foregroundColor(.black)
                     }
+                    .accessibilityLabel("Clear search")
                 }
             }
             .padding(.horizontal, 16)
@@ -101,6 +104,8 @@ struct SessionSearchView: View {
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.white)
             }
+            .accessibilityLabel("Close search")
+            .accessibilityInputLabels(["close", "done"])
         }
         .padding(.horizontal, 20)
         .padding(.top, 16)
@@ -113,7 +118,12 @@ struct SessionSearchView: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 16) {
                 ForEach(results) { session in
-                    SessionRow(session: session)
+                    NavigationLink {
+                        SessionAnalytics(sessionId: session.id)
+                    } label: {
+                        SessionRow(session: session)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 20)
@@ -129,6 +139,7 @@ struct SessionSearchView: View {
             Spacer()
             Text("🙏")
                 .font(.system(size: 64))
+                .accessibilityDecorative()
             Text(trimmedQuery.isEmpty ? "No sessions yet" : "Sorry, no session found...")
                 .font(.system(size: 22, weight: .heavy))
                 .foregroundColor(.white)

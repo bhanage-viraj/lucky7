@@ -65,6 +65,7 @@ struct CrashSessionScreen: View {
             appeared = true
             shake = true
             createSessionIfNeeded()
+            AccessibilitySupport.announce("Session ended early")
         }
         .onChange(of: sessionRecording.finalVideoURL) { _, url in
             persistWrappedVideoPath(url)
@@ -105,6 +106,7 @@ struct CrashSessionScreen: View {
 
             Image("PatternBackgroundSmall")
                 .ignoresSafeArea()
+                .accessibilityDecorative()
 
             VStack {
                 Spacer()
@@ -117,12 +119,14 @@ struct CrashSessionScreen: View {
                         .opacity(appeared ? 1 : 0)
                         .scaleEffect(appeared ? 1 : 1.4)
                         .animation(.spring(response: 0.5, dampingFraction: 0.4).delay(0.2), value: appeared)
+                        .accessibilityDecorative()
 
                     Image(.titleEndSession)
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : -20)
                         .blur(radius: appeared ? 0 : 6)
                         .animation(.spring(response: 0.6, dampingFraction: 0.7).delay(0.05), value: appeared)
+                        .accessibilityDecorative()
                 }
                 .offset(x: shake ? -8 : 0)
                 .animation(
@@ -148,33 +152,40 @@ struct CrashSessionScreen: View {
                     .opacity(appeared ? 1 : 0)
                     .scaleEffect(appeared ? 1 : 0.4)
                     .animation(.spring(response: 0.5, dampingFraction: 0.4).delay(0.6), value: appeared)
+                    .accessibilityDecorative()
 
                 Spacer()
 
-                Text("Tap to go to the next screen")
-                    .font(.system(size: 14))
-                    .opacity(appeared ? 0.8 : 0)
-                    .animation(.easeIn(duration: 0.5).delay(0.9), value: appeared)
+                Button {
+                    guard sessionId != nil else { return }
+                    step = .details
+                } label: {
+                    Text("Tap to go to the next screen")
+                        .font(.system(size: 14))
+                        .opacity(appeared ? 0.8 : 0)
+                        .animation(.easeIn(duration: 0.5).delay(0.9), value: appeared)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Continue to session details")
+                .accessibilityHint("Opens the screen to title and save your session")
+                .accessibilityInputLabels(["continue", "next", "session details"])
             }
             .foregroundStyle(.white)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard sessionId != nil else { return }
-            step = .details
         }
     }
 
     @ViewBuilder
     private var exportOverlay: some View {
         if sessionRecording.isExporting {
-            Color.black.opacity(0.55).ignoresSafeArea()
+            Color.black.opacity(0.55).ignoresSafeArea().accessibilityDecorative()
             VStack(spacing: 12) {
                 ProgressView().tint(.white)
                 Text("Generating your Wrap...")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.white)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Generating your session wrap video")
         }
     }
 

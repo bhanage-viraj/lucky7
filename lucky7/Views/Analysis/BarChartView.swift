@@ -112,5 +112,15 @@ struct BarChartView: View {
                 .frame(maxWidth: .infinity)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Weekly focus chart")
+        .accessibilityValue(chartSummary)
+        .accessibilityHint("Shows focused and distracted time for each day")
+    }
+
+    private var chartSummary: String {
+        data.map { day in
+            "\(day.label): \(Int(day.primary)) minutes focused, \(Int(day.secondary)) minutes distracted"
+        }.joined(separator: ". ")
     }
 }

@@ -175,6 +175,7 @@ struct HomePage: View {
         }
         .onChange(of: sessionActive) { _, active in
             if !active { sessionRecording.prepareCamera() }   // session ended → resume home preview
+            AccessibilitySupport.announce(active ? "Focus session started" : "Returned to home")
         }
         .onChange(of: isReadyToRecord) { _, ready in
             if ready { tipDurationSeen = true }   // first duration set → drop the setup tip for good
@@ -315,6 +316,7 @@ struct RecordingBackground: View {
             .ignoresSafeArea()
         }
         .allowsHitTesting(false)
+        .accessibilityDecorative()
     }
 }
 
@@ -336,6 +338,9 @@ private struct HomeHeader: View {
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(.white)
                 }
+                .accessibilityLabel("Settings")
+                .accessibilityHint("Opens app settings")
+                .accessibilityInputLabels(["settings", "open settings", "gear"])
                 Spacer()
             }
             .padding(.horizontal, 22)
@@ -440,6 +445,10 @@ private struct RecordButton: View {
             .shadow(color: .black.opacity(0.2), radius: 6 * scale, y: 3 * scale)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(isReady ? "Start focus session" : "Start focus session, unavailable")
+        .accessibilityHint(isReady ? "Begins timelapse recording and focus timer" : "Set a focus duration first")
+        .accessibilityInputLabels(["record", "start", "start session", "start recording", "start timelapse"])
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -457,6 +466,9 @@ private struct FlipCameraButton: View {
                 .shadow(color: .black.opacity(0.18), radius: 4 * scale, y: 2 * scale)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Switch camera")
+        .accessibilityHint("Switches between front and back camera")
+        .accessibilityInputLabels(["flip camera", "switch camera", "front camera", "back camera"])
     }
 }
 
@@ -504,6 +516,7 @@ private struct HomeTrafficTimer: View {
                 .resizable()
                 .frame(width: timerWidth, height: timerHeight)
                 .allowsHitTesting(false)
+                .accessibilityDecorative()
 
             HStack(spacing: shellSpacing) {
                 dial($hours, range: 0...23, shellSlotWidth: shellSlotWidth, shellHeight: shellGroupHeight)
@@ -541,6 +554,7 @@ private struct HomeTrafficTimer: View {
                 .resizable()
                 .frame(width: shellSlotWidth, height: shellSlotWidth)
                 .allowsHitTesting(false)
+                .accessibilityDecorative()
 
             Image("TrafficShell")
                 .resizable()
@@ -579,6 +593,7 @@ private struct HomeTimeDial: View {
     @Binding var selected: Int
     let range: ClosedRange<Int>
     let diameter: CGFloat
+    let unit: AccessibilitySupport.TimeUnit
 
     @State private var scrollID: Int?
 
@@ -631,6 +646,7 @@ private struct HomeTimeDial: View {
             }
         }
         .sensoryFeedback(.selection, trigger: selected)
+        .timeDialAccessibility(selected: $selected, range: range, unit: unit)
     }
 }
 
