@@ -36,6 +36,10 @@ final class SessionRecordingViewModel: ObservableObject {
         timelapseManager.captureSession
     }
 
+    var capturedFrameCount: Int {
+        timelapseManager.currentFrameCount
+    }
+
     func prepareCamera() {
         timelapseManager.requestPermissionAndConfigure { [weak self] granted in
             Task { @MainActor in
@@ -82,6 +86,7 @@ final class SessionRecordingViewModel: ObservableObject {
                     self.isRecording = true
                     self.didCaptureThisSession = true
                     ScreenWakeLock.setActive(true)
+                    AccessibilitySupport.announce("Recording started")
                 } else {
                     self.lastError = "Could not start recording."
                     self.statusMessage = nil
@@ -94,12 +99,14 @@ final class SessionRecordingViewModel: ObservableObject {
         timelapseManager.capturePaused = true
         timelapseManager.beginPause()
         statusMessage = "Recording paused"
+        AccessibilitySupport.announce("Recording paused")
     }
 
     func resumeRecording() {
         timelapseManager.endPause()
         timelapseManager.capturePaused = false
         statusMessage = "Recording…"
+        AccessibilitySupport.announce("Recording resumed")
     }
 
     func stopRecordingAndExport(
@@ -125,6 +132,7 @@ final class SessionRecordingViewModel: ObservableObject {
         isExporting = true
         ScreenWakeLock.setActive(true)
         statusMessage = "Saving your session video…"
+        AccessibilitySupport.announce("Recording stopped. Saving your video")
 
         timelapseManager.stopRecording { [weak self] result in
             Task { @MainActor in
@@ -168,6 +176,7 @@ final class SessionRecordingViewModel: ObservableObject {
                         self.previewFrames = Self.extractPreviewFrames(from: finalURL, count: 3)
                         self.didCaptureThisSession = false
                         self.statusMessage = "Video saved"
+                        AccessibilitySupport.announce("Export completed")
                         self.lastExportFrameCount = result.frameCount
                         // Keep the raw so the wrap can be re-rendered with the title later
                         // (and so the Photos copy is the titled one — see reexportWithTitle).
@@ -234,6 +243,7 @@ final class SessionRecordingViewModel: ObservableObject {
             try await PhotoLibrarySaver.saveVideo(at: videoURL)
             savedToPhotos = true
             statusMessage = "Saved to Photos"
+            AccessibilitySupport.announce("Saved to Photos")
             print("SessionRecording: saved wrap to Photos")
         } catch {
             print("SessionRecording: Photos save failed – \(error.localizedDescription)")

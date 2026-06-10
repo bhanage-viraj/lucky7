@@ -21,5 +21,6 @@ struct LegendItemView: View {
             Text(label)
                 .font(.system(size: 14))
         }
+        .accessibilityElement(children: .combine)
     }
 }

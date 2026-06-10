@@ -30,8 +30,9 @@ struct FocusAlertCard: View {
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: appeared)
         .onAppear {
             appeared = true
+            AccessibilitySupport.announce("\(title). \(message)")
             guard autoDismiss else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { dismiss() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { dismiss() }
         }
     }
 
@@ -65,12 +66,16 @@ struct FocusAlertCard: View {
                     .background(Capsule().fill(.black))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(buttonTitle)
+            .accessibilityHint("Dismisses this alert")
         }
         .padding(.vertical, 20)
         .padding(.horizontal, 24)
         .frame(width: 354)
         .background(RoundedRectangle(cornerRadius: 24).fill(.white))
         .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(.black, lineWidth: 2))
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
     }
 }
 

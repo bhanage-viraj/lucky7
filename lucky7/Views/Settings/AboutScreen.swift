@@ -23,6 +23,7 @@ struct AboutScreen: View {
                             .font(.system(size: 20, weight: .bold))
                             .foregroundStyle(.white)
                     }
+                    .accessibilityLabel("Back")
                     Spacer()
                 }
                 .padding(.horizontal, 20)
@@ -34,6 +35,7 @@ struct AboutScreen: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 170)
+                    .accessibilityDecorative()
 
                 Text("Version 1.0")
                     .font(.system(size: 17, weight: .bold))

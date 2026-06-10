@@ -59,6 +59,8 @@ struct ReasonFormView: View {
                             .foregroundStyle(.black)
                             .scrollContentBackground(.hidden)
                             .focused($fieldFocused)
+                            .accessibilityLabel("Reason for opening \(appName)")
+                            .accessibilityHint("Required before unlocking the app")
                             .toolbar {
                                 ToolbarItemGroup(placement: .keyboard) {
                                     Spacer()
@@ -90,11 +92,17 @@ struct ReasonFormView: View {
             }
             .buttonStyle(.plain)
             .disabled(!canSubmit)
+            .accessibilityLabel("Submit and unlock \(appName)")
+            .accessibilityHint("Unlocks the app for a short break")
+            .accessibilityInputLabels(["submit", "unlock", "submit and unlock"])
 
             Button(action: onSkip) {
                 pill(title: "CANCEL", bordered: true)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Cancel")
+            .accessibilityHint("Returns to your focus session without unlocking")
+            .accessibilityInputLabels(["cancel", "go back"])
         }
     }
 

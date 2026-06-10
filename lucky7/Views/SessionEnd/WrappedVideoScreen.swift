@@ -206,6 +206,8 @@ struct WrappedVideoScreen: View {
                     .font(.system(size: 20, weight: .bold))
                     .foregroundColor(.white)
             }
+            .accessibilityLabel("Back")
+            .accessibilityInputLabels(["back", "go back"])
 
             Spacer()
 
@@ -231,6 +233,8 @@ struct WrappedVideoScreen: View {
         Image(systemName: "square.and.arrow.up")
             .font(.system(size: 20, weight: .semibold))
             .foregroundColor(.white)
+            .accessibilityLabel("Share video")
+            .accessibilityInputLabels(["share", "share video", "export"])
     }
 
     private var mediaCard: some View {
@@ -273,6 +277,10 @@ struct WrappedVideoScreen: View {
                 .clipShape(RoundedRectangle(cornerRadius: 32))
             )
             .frame(maxWidth: 340)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Session wrap video")
+            .accessibilityValue("\(displayTitle), \(durationText), \(dateText)")
+            .accessibilityHint(isPlaying ? "Video is playing" : "Video is paused")
     }
 
     private var playPauseButton: some View {
@@ -285,6 +293,8 @@ struct WrappedVideoScreen: View {
         }
         .disabled(!isWrapReady)
         .opacity(isWrapReady ? 1 : 0.5)
+        .accessibilityLabel(didFinish ? "Restart video" : (isPlaying ? "Pause video" : "Play video"))
+        .accessibilityInputLabels(didFinish ? ["restart", "replay"] : (isPlaying ? ["pause"] : ["play", "play video"]))
     }
 }
 
@@ -343,6 +353,7 @@ private struct WrapNotReadyModal: View {
                             .foregroundStyle(Color.black.opacity(0.55))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
                 }
                 .padding(.horizontal, 18)
                 .padding(.top, 6)
@@ -371,11 +382,13 @@ private struct WrapNotReadyModal: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 22)
                 .padding(.bottom, 22)
+                .accessibilityLabel("Got it")
             }
             .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
             .padding(.horizontal, 20)
             .padding(.bottom, 28)
             .shadow(color: .black.opacity(0.2), radius: 20, y: 8)
+            .accessibilityAddTraits(.isModal)
         }
     }
 }

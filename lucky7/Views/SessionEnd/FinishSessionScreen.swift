@@ -39,6 +39,8 @@ struct FinishSessionScreen: View {
                                 .background(Color.green.opacity(0.8))
                                 .clipShape(Capsule())
                                 .padding(.bottom, 48)
+                                .accessibilityLabel("Saved to Photos")
+                                .accessibilityAddTraits(.isStaticText)
                         }
                     }
             case .details:
@@ -63,6 +65,7 @@ struct FinishSessionScreen: View {
         .onAppear {
             appeared = true
             createSessionIfNeeded()
+            AccessibilitySupport.announce("Session complete. You stayed on track.")
         }
         .onChange(of: sessionRecording.finalVideoURL) { _, url in
             persistWrappedVideoPath(url)
@@ -99,6 +102,7 @@ struct FinishSessionScreen: View {
 
             Image("PatternBackgroundSmall")
                 .ignoresSafeArea()
+                .accessibilityDecorative()
 
             VStack {
                 Spacer()
@@ -111,12 +115,14 @@ struct FinishSessionScreen: View {
                         .opacity(appeared ? 1 : 0)
                         .offset(y: appeared ? 0 : 10)
                         .animation(.spring(response: 0.6, dampingFraction: 0.7).delay(0.3), value: appeared)
+                        .accessibilityDecorative()
 
                     Image(.titleFinishSession)
                         .scaleEffect(appeared ? 1 : 0.7)
                         .opacity(appeared ? 1 : 0)
                         .blur(radius: appeared ? 0 : 8)
                         .animation(.spring(response: 0.8, dampingFraction: 0.6).delay(0.1), value: appeared)
+                        .accessibilityDecorative()
                 }
 
                 Text("You stayed on track and got things done. Reflect on your session and see your focus stats.")
@@ -135,33 +141,41 @@ struct FinishSessionScreen: View {
                     .opacity(appeared ? 1 : 0)
                     .scaleEffect(appeared ? 1 : 0.5)
                     .animation(.spring(response: 0.7, dampingFraction: 0.5).delay(0.55), value: appeared)
+                    .accessibilityDecorative()
 
                 Spacer()
 
-                Text("Tap to go to the next screen")
-                    .font(.system(size: 14))
-                    .opacity(appeared ? 0.8 : 0)
-                    .animation(.easeIn(duration: 0.5).delay(0.8), value: appeared)
+                Button {
+                    guard sessionId != nil else { return }
+                    step = .details
+                } label: {
+                    Text("Tap to go to the next screen")
+                        .font(.system(size: 14))
+                        .opacity(appeared ? 0.8 : 0)
+                        .animation(.easeIn(duration: 0.5).delay(0.8), value: appeared)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Continue to session details")
+                .accessibilityHint("Opens the screen to title and save your session")
+                .accessibilityInputLabels(["continue", "next", "session details", "tap"])
             }
             .foregroundStyle(.white)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard sessionId != nil else { return }
-            step = .details
         }
     }
 
     @ViewBuilder
     private var exportOverlay: some View {
         if sessionRecording.isExporting {
-            Color.black.opacity(0.55).ignoresSafeArea()
+            Color.black.opacity(0.55).ignoresSafeArea().accessibilityDecorative()
             VStack(spacing: 12) {
                 ProgressView().tint(.white)
                 Text("Generating your Wrap...")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.white)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Generating your session wrap video")
+            .accessibilityAddTraits(.updatesFrequently)
         }
     }
 

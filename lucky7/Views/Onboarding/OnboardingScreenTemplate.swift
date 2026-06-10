@@ -74,6 +74,7 @@ struct OnboardingScreenTemplate<Content: View>: View {
                     Image("OnboardingContainer")
                         .resizable()
                         .scaledToFit()
+                        .accessibilityDecorative()
                         .overlay {
                             content()
                                 .padding(.horizontal, 28)
@@ -96,20 +97,26 @@ struct OnboardingScreenTemplate<Content: View>: View {
                     .opacity(isDisabled ?? false ? 0.5 : 1)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 20)
+                    .accessibilityLabel(buttonText ?? "Continue")
+                    .accessibilityHint("Step \(step) of 3")
+                    .accessibilityInputLabels(["continue", "next"])
                 }
 
                 HStack(spacing: 0) {
                     sideTapZone(action: onGoPrevious)
                         .frame(width: sideTapWidth(for: geometry.size.width))
+                        .accessibilityHidden(true)
 
                     Spacer()
                         .allowsHitTesting(false)
 
                     sideTapZone(action: onGoNext)
                         .frame(width: sideTapWidth(for: geometry.size.width))
+                        .accessibilityHidden(true)
                 }
             }
         }
+        .accessibilityElement(children: .contain)
     }
 
     private var progressHeader: some View {
@@ -121,6 +128,8 @@ struct OnboardingScreenTemplate<Content: View>: View {
                         .foregroundStyle(.white)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+                .accessibilityInputLabels(["back", "previous"])
             }
 
             ZStack{
@@ -161,6 +170,9 @@ struct OnboardingScreenTemplate<Content: View>: View {
                     }
                 }
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Onboarding progress")
+            .accessibilityValue("Step \(step) of 3")
         }
     }
 

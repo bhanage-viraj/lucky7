@@ -26,6 +26,7 @@ struct SettingsScreen: View {
                     .resizable()
                     .scaledToFill()
                     .ignoresSafeArea()
+                    .accessibilityDecorative()
 
                 VStack(spacing: 0) {
                     header
@@ -69,6 +70,8 @@ struct SettingsScreen: View {
                         .font(.system(size: 20, weight: .bold))
                         .foregroundStyle(.white)
                 }
+                .accessibilityLabel("Back")
+                .accessibilityInputLabels(["back", "close settings"])
                 Spacer()
             }
         }
@@ -88,6 +91,9 @@ struct SettingsScreen: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(isRequestingAuth)
+                .accessibilityLabel("Blocked apps")
+                .accessibilityHint("Choose which apps to block during focus sessions")
+                .accessibilityInputLabels(["blocked apps", "app blocking", "block apps"])
 
                 Divider().padding(.horizontal, 16)
 
@@ -97,6 +103,8 @@ struct SettingsScreen: View {
                     row(icon: "info.circle", title: "ABOUT RUSH HOUR")
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("About Rush Hour")
+                .accessibilityHint("App information and version")
             }
         }
     }

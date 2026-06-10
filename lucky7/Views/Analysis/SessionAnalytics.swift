@@ -122,6 +122,9 @@ struct SessionAnalytics: View {
                             .font(.system(size: 20, weight: .bold))
                             .foregroundColor(.white)
                     }
+                    .accessibilityLabel("Close")
+                    .accessibilityHint("Closes session analytics")
+                    .accessibilityInputLabels(["close", "done", "exit"])
 
                     Spacer()
 
@@ -188,6 +191,9 @@ struct SessionAnalytics: View {
         Image(systemName: "square.and.arrow.up")
             .font(.system(size: 20, weight: .semibold))
             .foregroundColor(.white)
+            .accessibilityLabel("Share session")
+            .accessibilityHint("Share your session video or summary")
+            .accessibilityInputLabels(["share", "share session", "export"])
     }
 
     private var statsCard: some View {
@@ -239,7 +245,11 @@ struct SessionAnalytics: View {
                     .background(Circle().fill(Color.black))
             }
             .offset(x: 5, y: 5)
+            .accessibilityLabel("Play session wrap video")
+            .accessibilityHint("Opens the timelapse video for this session")
+            .accessibilityInputLabels(["play", "play video", "watch wrap"])
         }
+        .accessibilityElement(children: .contain)
     }
 
     private var detailCard: some View {
@@ -286,6 +296,9 @@ struct SessionAnalytics: View {
                             .clipShape(RoundedRectangle(cornerRadius: 16))
                             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.black, lineWidth: 2))
                             .contentShape(RoundedRectangle(cornerRadius: 16))
+                            .accessibilityLabel("Activity snapshot \(index + 1)")
+                            .accessibilityHint("Opens snapshot full screen")
+                            .accessibilityAddTraits(.isButton)
                             .onTapGesture {
                                 guard index < savedSnapshots.count else { return }
                                 fullscreenSnapshot = FullscreenSnapshot(id: index)
@@ -324,6 +337,9 @@ struct SessionAnalytics: View {
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 30)
+        .accessibilityLabel("Delete session")
+        .accessibilityHint("Permanently deletes this session and its video")
+        .accessibilityInputLabels(["delete", "remove session"])
     }
 
     // MARK: - Delete confirmation modal
@@ -348,6 +364,7 @@ struct SessionAnalytics: View {
                             .font(.system(size: 16, weight: .bold))
                             .foregroundColor(.black)
                     }
+                    .accessibilityLabel("Close")
                 }
 
                 Text("You're about to permanently delete your session, including the timelapse and analytics.\nAre you sure?")
@@ -369,6 +386,8 @@ struct SessionAnalytics: View {
                             .background(RoundedRectangle(cornerRadius: 30).fill(Color.white))
                             .overlay(RoundedRectangle(cornerRadius: 30).stroke(Color("ButtonRed"), lineWidth: 2))
                     }
+                    .accessibilityLabel("Confirm delete")
+                    .accessibilityInputLabels(["delete", "confirm delete"])
 
                     Button(action: dismissDeleteConfirm) {
                         Text("CANCEL")
@@ -378,6 +397,8 @@ struct SessionAnalytics: View {
                             .padding(.vertical, 16)
                             .background(RoundedRectangle(cornerRadius: 30).fill(Color.black))
                     }
+                    .accessibilityLabel("Cancel delete")
+                    .accessibilityInputLabels(["cancel", "keep session"])
                 }
                 .padding(.top, 4)
             }
@@ -388,6 +409,7 @@ struct SessionAnalytics: View {
         }
         .zIndex(2)
         .transition(.opacity)
+        .accessibilityAddTraits(.isModal)
     }
 
     private func dismissDeleteConfirm() {
@@ -449,6 +471,9 @@ struct StatView: View {
                 .foregroundColor(.black)
         }
         .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title.replacingOccurrences(of: " ", with: " ").lowercased().capitalized)
+        .accessibilityValue(value)
     }
 }
 
@@ -486,6 +511,8 @@ struct SnapshotViewer: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: images.count > 1 ? .automatic : .never))
+            .accessibilityLabel("Activity snapshot viewer")
+            .accessibilityValue("Snapshot \(selection + 1) of \(images.count)")
 
             VStack {
                 HStack {
@@ -497,6 +524,8 @@ struct SnapshotViewer: View {
                             .padding(12)
                             .background(Circle().fill(Color.black.opacity(0.5)))
                     }
+                    .accessibilityLabel("Close")
+                    .accessibilityHint("Returns to session analytics")
                 }
                 Spacer()
             }

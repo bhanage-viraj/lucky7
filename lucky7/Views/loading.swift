@@ -79,10 +79,13 @@ struct Loading: View {
                     .ignoresSafeArea()
 
                 Image("load6")
+                    .accessibilityDecorative()
 
                 Image("load7")
+                    .accessibilityDecorative()
 
                 Image("load8")
+                    .accessibilityDecorative()
 
                 // Pulse Animation
                 Image("Rushhourload")
@@ -93,7 +96,11 @@ struct Loading: View {
                         .repeatForever(autoreverses: true),
                         value: pulse
                     )
+                    .accessibilityDecorative()
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Rush Hour")
+            .accessibilityValue("Loading")
             .onAppear {
 
                 // Start pulse animation
@@ -138,21 +145,29 @@ struct FloatingTabBar: View {
         .overlay(
             Capsule().stroke(Color.black.opacity(0.06), lineWidth: 1)
         )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Tab bar")
     }
 
     private func tabButton(index: Int, systemImage: String) -> some View {
-        Button {
+        let titles = ["Home", "Sessions"]
+        let isSelected = selection == index
+        return Button {
             withAnimation(.easeInOut(duration: 0.2)) { selection = index }
         } label: {
             Image(systemName: systemImage)
                 .font(.system(size: 22, weight: .semibold))
-                .foregroundColor(selection == index ? .white : .black)
+                .foregroundColor(isSelected ? .white : .black)
                 .frame(width: 76, height: 48)
                 .background(
-                    Capsule().fill(selection == index ? Color.black : Color.clear)
+                    Capsule().fill(isSelected ? Color.black : Color.clear)
                 )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(titles[index])
+        .accessibilityHint(isSelected ? "Selected tab" : "Switch to \(titles[index]) tab")
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityInputLabels([titles[index].lowercased(), index == 0 ? "home" : "sessions", "tab"])
     }
 }
 
