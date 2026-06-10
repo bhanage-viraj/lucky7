@@ -441,7 +441,7 @@ struct RecordingPage: View {
             ReasonFormView(
                 appName: prompt.distraction.appOpened.isEmpty ? "this app" : prompt.distraction.appOpened,
                 onSubmit: { takeBreak($0, for: prompt) },
-                onSkip: { takeBreak("", for: prompt) }
+                onCancel: { cancelBreak(for: prompt) }
             )
             .presentationDetents([.large])
             .presentationCornerRadius(40)
@@ -619,6 +619,21 @@ struct RecordingPage: View {
         #endif
         try? modelContext.save()
         pendingPrompt = nil
+    }
+
+    private func cancelBreak(for prompt: PendingPrompt) {
+        if pendingPrompt?.id == prompt.id {
+            pendingPrompt = nil
+        }
+
+        #if os(iOS)
+        if focusController.activeBreaks.contains(where: { $0.id == prompt.distraction.id }) {
+            focusController.endBreakEarly(for: prompt.distraction)
+        }
+        #endif
+
+        modelContext.delete(prompt.distraction)
+        try? modelContext.save()
     }
 
     // jailbreak: a break was taken on the shield → record it and prompt for a reason

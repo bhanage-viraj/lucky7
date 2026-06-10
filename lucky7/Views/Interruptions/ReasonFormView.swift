@@ -11,7 +11,7 @@ struct ReasonFormView: View {
     let appName: String
     @State private var reason: String = ""
     let onSubmit: (String) -> Void
-    let onSkip: () -> Void
+    let onCancel: () -> Void
 
     @FocusState private var fieldFocused: Bool
 
@@ -96,7 +96,7 @@ struct ReasonFormView: View {
             .accessibilityHint("Unlocks the app for a short break")
             .accessibilityInputLabels(["submit", "unlock", "submit and unlock"])
 
-            Button(action: onSkip) {
+            Button(action: onCancel) {
                 pill(title: "CANCEL", bordered: true)
             }
             .buttonStyle(.plain)
@@ -130,6 +130,6 @@ struct ReasonFormView: View {
             startPoint: .top, endPoint: .bottom
         )
         .ignoresSafeArea()
-        ReasonFormView(appName: "Instagram", onSubmit: { _ in }, onSkip: {})
+        ReasonFormView(appName: "Instagram", onSubmit: { _ in }, onCancel: {})
     }
 }
