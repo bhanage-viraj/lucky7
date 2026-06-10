@@ -261,7 +261,6 @@ struct SessionDetails: View {
                 .padding(.vertical, 20)
                 .background(canSave ? saveButtonColor : saveButtonColor.opacity(0.5))
                 .clipShape(RoundedRectangle(cornerRadius: 30))
-                .shadow(color: .black.opacity(0.7), radius: 0, x: 0, y: 4)
         }
         .disabled(!canSave)
     }
