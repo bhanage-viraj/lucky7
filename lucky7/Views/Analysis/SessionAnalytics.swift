@@ -203,12 +203,12 @@ struct SessionAnalytics: View {
 
                 VStack(spacing: 24) {
                     HStack {
-                        StatView(title: "WHOLE SESSION", value: wholeSessionText)
-                        StatView(title: "FOCUS DURATION", value: focusDurationText)
+                        StatView(title: "Whole Session", value: wholeSessionText)
+                        StatView(title: "Focus Duration", value: focusDurationText)
                     }
                     HStack {
-                        StatView(title: "DISTRACTION COUNT", value: distractionCountText)
-                        StatView(title: "DISTRACTED DURATION", value: distractedDurationText)
+                        StatView(title: "Distraction Count", value: distractionCountText)
+                        StatView(title: "Distracted Duration", value: distractedDurationText)
                     }
                 }
                 .padding(.bottom, 30)
@@ -463,7 +463,7 @@ struct StatView: View {
     var body: some View {
         VStack(spacing: 6) {
             Text(title)
-                .font(.system(size: 11, weight: .heavy))
+                .font(.system(size: 12))
                 .foregroundColor(Color(UIColor.gray))
                 .kerning(1.2)
             Text(value)
