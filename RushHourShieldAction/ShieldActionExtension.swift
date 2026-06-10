@@ -81,17 +81,11 @@ class ShieldActionExtension: ShieldActionDelegate {
     // .openParentalControlsApp auto-opens Rush Hour on 26.5 — that's the instant redirect back.
     // (the tapped notification stays as the fallback if it ever no-ops.)
     private func respond(_ completionHandler: @escaping (ShieldActionResponse) -> Void) {
-#if canImport(ManagedSettings)
-    if #available(iOS 26.5, *),
-       let openResponse = (ShieldActionResponse.self as AnyObject)
-            .value(forKey: "openParentalControlsApp") as? ShieldActionResponse {
-        completionHandler(openResponse)
-    } else {
-        completionHandler(.close)
-    }
-#else
-    completionHandler(.close)
-#endif
+        if #available(iOS 26.5, *) {
+            completionHandler(.openParentalControlsApp)
+        } else {
+            completionHandler(.close)
+        }
     }
 
     private func recordAction(tokenData: Data?, action: String) {
@@ -140,4 +134,3 @@ class ShieldActionExtension: ShieldActionDelegate {
         _ = group.wait(timeout: .now() + 1.0)
     }
 }
-

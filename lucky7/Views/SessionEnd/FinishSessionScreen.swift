@@ -17,6 +17,13 @@ struct FinishSessionScreen: View {
     @EnvironmentObject private var sessionRecording: SessionRecordingViewModel
 
     private var videoFrames: [UIImage] { sessionRecording.previewFrames }
+    private let stepAnimation = Animation.spring(response: 0.44, dampingFraction: 0.9, blendDuration: 0.08)
+    private var stepTransition: AnyTransition {
+        .asymmetric(
+            insertion: .move(edge: .trailing).combined(with: .opacity),
+            removal: .move(edge: .leading).combined(with: .opacity)
+        )
+    }
 
     @State private var appeared = false
     @State private var step: SessionEndStep = .celebration
@@ -24,11 +31,11 @@ struct FinishSessionScreen: View {
     @State private var hasCompletedFlow = false
 
     var body: some View {
-        Group {
+        ZStack {
             switch step {
             case .celebration:
                 celebrationView
-                    .overlay { exportOverlay }
+                    .transition(stepTransition)
                     .overlay(alignment: .bottom) {
                         if sessionRecording.savedToPhotos {
                             Text("Saved to Photos")
@@ -48,9 +55,14 @@ struct FinishSessionScreen: View {
                     SessionDetails(
                         sessionId: sessionId,
                         videoFrames: videoFrames,
-                        onSave: { step = .analytics },
+                        onSave: {
+                            withAnimation(stepAnimation) {
+                                step = .analytics
+                            }
+                        },
                         onFlowComplete: completeFlow
                     )
+                    .transition(stepTransition)
                 }
             case .analytics:
                 if let sessionId {
@@ -59,9 +71,11 @@ struct FinishSessionScreen: View {
                         videoFrames: videoFrames,
                         onClose: completeFlow
                     )
+                    .transition(stepTransition)
                 }
             }
         }
+        .animation(stepAnimation, value: step)
         .onAppear {
             appeared = true
             createSessionIfNeeded()
@@ -160,7 +174,9 @@ struct FinishSessionScreen: View {
 
                 Button {
                     guard sessionId != nil else { return }
-                    step = .details
+                    withAnimation(stepAnimation) {
+                        step = .details
+                    }
                 } label: {
                     Text("Tap to go to the next screen")
                         .font(.system(size: 14))
@@ -173,22 +189,6 @@ struct FinishSessionScreen: View {
                 .accessibilityInputLabels(["continue", "next", "session details", "tap"])
             }
             .foregroundStyle(.white)
-        }
-    }
-
-    @ViewBuilder
-    private var exportOverlay: some View {
-        if sessionRecording.isExporting {
-            Color.black.opacity(0.55).ignoresSafeArea().accessibilityDecorative()
-            VStack(spacing: 12) {
-                ProgressView().tint(.white)
-                Text("Generating your Wrap...")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Generating your session wrap video")
-            .accessibilityAddTraits(.updatesFrequently)
         }
     }
 

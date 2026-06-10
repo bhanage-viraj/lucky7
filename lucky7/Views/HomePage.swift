@@ -42,6 +42,7 @@ struct HomePage: View {
     @State private var safeBottom: CGFloat = 34
 
     private let transition = Animation.spring(response: 0.5, dampingFraction: 0.86)
+    private let focusTransition = Animation.spring(response: 0.42, dampingFraction: 0.92, blendDuration: 0.08)
 
     private var isReadyToRecord: Bool {
         hours > 0 || minutes > 0 || seconds > 0
@@ -117,7 +118,7 @@ struct HomePage: View {
                         }
                     }
                     .position(x: centerX, y: centerY)
-                    .animation(.spring(response: 0.5, dampingFraction: 0.85), value: isFocusExpanded)
+                    .animation(focusTransition, value: isFocusExpanded)
                     .animation(transition, value: sessionActive)
             }
             .ignoresSafeArea()

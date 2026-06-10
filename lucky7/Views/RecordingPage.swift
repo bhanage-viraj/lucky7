@@ -30,6 +30,7 @@ struct RecordingPage: View {
     var onExit: (() -> Void)? = nil
 
     @State private var hasStarted = false
+    @State private var isStartingSession = false
     @State private var showEndConfirm = false
     @State private var showCrashSession = false
     @State private var showNotifNudge = false
@@ -43,6 +44,8 @@ struct RecordingPage: View {
     @EnvironmentObject private var focusController: FocusViewModel
     #endif
 
+    private let focusTransition = Animation.spring(response: 0.42, dampingFraction: 0.92, blendDuration: 0.08)
+
     // jailbreak: distraction prompt + in-app unlock card + records sheet
     @State private var pendingPrompt: PendingPrompt?
     @State private var unlock: UnlockInfo?
@@ -51,6 +54,7 @@ struct RecordingPage: View {
     struct PendingPrompt: Identifiable {
         let id = UUID()
         let distraction: Distraction
+        let actionOccurredAt: Date
         let tokenDataToClear: Data?
     }
 
@@ -74,6 +78,7 @@ struct RecordingPage: View {
             if !embedded {
                 RecordingBackground()
                     .opacity(isExpanded ? 1 : 0)
+                    .animation(focusTransition, value: isExpanded)
             }
 
             // Camera preview — STANDALONE ONLY. Morphs between full-screen fill and the
@@ -115,6 +120,7 @@ struct RecordingPage: View {
                             )
                             .accessibilityAddTraits(.updatesFrequently)
                     }
+                    .animation(focusTransition, value: isExpanded)
                 }
                 .ignoresSafeArea()
             }
@@ -187,7 +193,7 @@ struct RecordingPage: View {
 
                     // EXPAND — fullscreen focus view
                     // EXPAND — full-focus view (same camera, different chrome)
-                    Button(action: { withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) { isExpanded = true } }) {
+                    Button(action: { withAnimation(focusTransition) { isExpanded = true } }) {
                         Circle()
                             .fill(.ultraThinMaterial)
                             .frame(width: 60, height: 60)
@@ -205,11 +211,17 @@ struct RecordingPage: View {
                 .padding(.bottom, 24)
             }
             .opacity(isExpanded ? 0 : 1)
+            .scaleEffect(isExpanded ? 0.98 : 1)
+            .blur(radius: isExpanded ? 5 : 0)
+            .animation(focusTransition, value: isExpanded)
             .allowsHitTesting(!isExpanded)
 
             // ── Expanded (full-focus) overlay ─────────────────
             expandedSessionOverlay
                 .opacity(isExpanded ? 1 : 0)
+                .scaleEffect(isExpanded ? 1 : 1.02)
+                .blur(radius: isExpanded ? 0 : 5)
+                .animation(focusTransition, value: isExpanded)
                 .allowsHitTesting(isExpanded)
 
             if sessionRecording.isExporting {
@@ -276,6 +288,9 @@ struct RecordingPage: View {
             }
             .padding(.top, 132)   // floating recording/paused indicator below the housing
             .opacity(isExpanded ? 0 : 1)
+            .scaleEffect(isExpanded ? 0.98 : 1)
+            .blur(radius: isExpanded ? 5 : 0)
+            .animation(focusTransition, value: isExpanded)
 
             if showEndConfirm {
                 EndSessionConfirm(
@@ -364,6 +379,7 @@ struct RecordingPage: View {
                 sessionTimer.pause()
                 focusController.release()
             }
+            SessionNotifications.cancelAwayNudges()
             #endif
         }
         .onChange(of: scenePhase) { _, phase in
@@ -374,10 +390,11 @@ struct RecordingPage: View {
                 }
                 checkPendingEvents()   // jailbreak: pick up a break taken on the shield
                 cancelShieldFallbackNotifications()   // clear delivered shield notifications
-                cancelAwayNudges()   // they're back — drop the "still there?" pings
+                SessionNotifications.cancelAwayNudges()   // they're back — drop the "still there?" pings
                 // notifications ARE the return path now — re-nudge if they got denied mid-session
                 Task { if await NotificationPermission.isDenied() { showNotifNudge = true } }
             case .background:
+                let shouldNudgeAway = hasStarted && sessionRecording.isRecording
                 // left the app → pause the session instead of letting it silently freeze and
                 // auto-resume; the button flips to RESUME so you pick back up deliberately
                 if hasStarted && sessionTimer.isRunning {
@@ -386,8 +403,10 @@ struct RecordingPage: View {
                 }
                 #if os(iOS)
                 // away from a paused session (and not on a break) → ping them to come back
-                if hasStarted && focusController.activeBreaks.isEmpty {
-                    scheduleAwayNudges()
+                if shouldNudgeAway && focusController.activeBreaks.isEmpty {
+                    SessionNotifications.scheduleAwayNudges()
+                } else if !shouldNudgeAway {
+                    SessionNotifications.cancelAwayNudges()
                 }
                 #endif
             case .inactive:
@@ -399,6 +418,7 @@ struct RecordingPage: View {
         .onChange(of: sessionTimer.showFinishSession) { _, show in
             if show {
                 finalizeRecording()
+                SessionNotifications.cancelAwayNudges()
                 #if os(iOS)
                 focusController.release()   // timer hit 00:00 — lift the shield + tear down the break Live Activity now, not after the recap
                 #endif
@@ -566,7 +586,7 @@ struct RecordingPage: View {
 
                 // MINIMIZE — shrink back to the recording page layout
                 Button(action: {
-                    withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+                    withAnimation(focusTransition) {
                         isExpanded = false
                     }
                 }) {
@@ -601,31 +621,14 @@ struct RecordingPage: View {
         pendingPrompt = nil
     }
 
-    // nudge the user back when they leave a paused session sitting for a while (10 + 20 min)
-    private func scheduleAwayNudges() {
-        let ids = ["rushhour.awaynudge.1", "rushhour.awaynudge.2"]
-        let center = UNUserNotificationCenter.current()
-        center.removePendingNotificationRequests(withIdentifiers: ids)
-        for (i, minutes) in [10, 20].enumerated() {
-            let content = UNMutableNotificationContent()
-            content.title = "Are you still there?"
-            content.body = "Your focus session is paused — tap to jump back in."
-            content.sound = .default
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: TimeInterval(minutes * 60), repeats: false)
-            center.add(UNNotificationRequest(identifier: ids[i], content: content, trigger: trigger))
-        }
-    }
-
-    private func cancelAwayNudges() {
-        UNUserNotificationCenter.current()
-            .removePendingNotificationRequests(withIdentifiers: ["rushhour.awaynudge.1", "rushhour.awaynudge.2"])
-    }
-
     // jailbreak: a break was taken on the shield → record it and prompt for a reason
     private func checkPendingEvents() {
         #if os(iOS)
-        guard pendingPrompt == nil, breakBlockedInfo == nil, unlock == nil else { return }
+        guard breakBlockedInfo == nil, unlock == nil else { return }
         guard let pair = SharedJailbreakStore.nextUnhandledBreak() else { return }
+        if let pendingPrompt, pair.action.occurredAt <= pendingPrompt.actionOccurredAt {
+            return
+        }
 
         // one break at a time: if an app is already unlocked, reject this new break —
         // keep the active break running, warn the user, and skip the reason form.
@@ -633,6 +636,13 @@ struct RecordingPage: View {
             breakBlockedInfo = BreakBlockedInfo()
             SharedJailbreakStore.markBreakHandled(pair.action.occurredAt)   // consume so it won't re-prompt
             return
+        }
+
+        if let stalePrompt = pendingPrompt,
+           !stalePrompt.distraction.reasonSubmitted,
+           stalePrompt.distraction.breakGrantedUntil == nil {
+            modelContext.delete(stalePrompt.distraction)
+            pendingPrompt = nil
         }
 
         let tokenData = pair.action.tokenData ?? pair.config?.tokenData
@@ -662,7 +672,11 @@ struct RecordingPage: View {
         focusController.prefetchDisplayName(for: distraction)
 
         SharedJailbreakStore.markBreakHandled(pair.action.occurredAt)
-        pendingPrompt = PendingPrompt(distraction: distraction, tokenDataToClear: tokenData)
+        pendingPrompt = PendingPrompt(
+            distraction: distraction,
+            actionOccurredAt: pair.action.occurredAt,
+            tokenDataToClear: tokenData
+        )
         #endif
     }
 
@@ -695,7 +709,10 @@ struct RecordingPage: View {
             isExpanded = false
             sessionTimer.showFinishSession = false
         }
+        hasStarted = false
+        isStartingSession = false
         sessionTimer.pause()
+        SessionNotifications.cancelAwayNudges()
         // Embedded: keep the shared camera running so it flows straight back into the
         // home preview as the frame shrinks; standalone: tear it down.
         if !embedded { sessionRecording.stopCamera() }
@@ -711,16 +728,24 @@ struct RecordingPage: View {
     // (on iOS) the app shield. Used by both the on-screen START button and the
     // auto-start path when arriving from the home record button.
     private func beginSession() {
-        guard !hasStarted, sessionRecording.cameraReady else { return }
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-            hasStarted = true
-            sessionRecording.startRecording(
-                plannedSessionSeconds: TimeInterval(sessionTimer.configuredTotalSeconds)
-            )
-            sessionTimer.start()
-            #if os(iOS)
-            focusController.engage()   // jailbreak: apply the shield
-            #endif
+        guard !hasStarted, !isStartingSession, sessionRecording.cameraReady else { return }
+        isStartingSession = true
+        sessionRecording.startRecording(
+            plannedSessionSeconds: TimeInterval(sessionTimer.configuredTotalSeconds)
+        ) { started in
+            isStartingSession = false
+            guard started else {
+                SessionNotifications.cancelAwayNudges()
+                return
+            }
+
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                hasStarted = true
+                sessionTimer.start()
+                #if os(iOS)
+                focusController.engage()   // jailbreak: apply the shield
+                #endif
+            }
         }
     }
 
@@ -745,6 +770,7 @@ struct RecordingPage: View {
     }
 
     private func endSessionEarly() {
+        SessionNotifications.cancelAwayNudges()
         sessionTimer.pause()
         #if os(iOS)
         focusController.release()   // lift the shield the moment they end, not after the recap
@@ -971,4 +997,3 @@ class PreviewView: UIView {
         .environmentObject(FocusViewModel())
         .modelContainer(for: [Session.self, Distraction.self], inMemory: true)
 }
-

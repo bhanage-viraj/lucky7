@@ -27,6 +27,8 @@ struct SessionDetails: View {
     @State private var showImageSourceDialog = false
     @State private var showCamera = false
     @State private var showLibrary = false
+    @State private var isSaving = false
+    @State private var backgroundWrapTask: Task<Void, Never>?
 
     // Drives the darker "active" outline on whichever field is in use.
     @FocusState private var focusedField: Field?
@@ -51,12 +53,6 @@ struct SessionDetails: View {
         let lastFrame = videoFrames.last!
 
         return [firstFrame, middleFrame, lastFrame]
-    }
-
-    private var canSave: Bool {
-        !sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-        !sessionDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-        !uploadedSnapshots.isEmpty
     }
 
     /// The snapshots field counts as "active" while its picker / camera / dialog is open.
@@ -96,12 +92,22 @@ struct SessionDetails: View {
             ScrollView {
                 VStack(spacing: 24) {
                     sessionCard
+                        .disabled(isSaving)
                     saveButton
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 24)
                 .padding(.bottom, 40)
             }
+        }
+        .onAppear {
+            scheduleBackgroundWrapExport()
+        }
+        .onChange(of: sessionTitle) { _, _ in
+            scheduleBackgroundWrapExport()
+        }
+        .onDisappear {
+            backgroundWrapTask?.cancel()
         }
     }
 
@@ -276,21 +282,62 @@ struct SessionDetails: View {
 
     private var saveButton: some View {
         Button(action: saveSession) {
-            Text("SAVE")
-                .font(.custom("Special Gothic Expanded One", size: 16))
-                .foregroundColor(.white.opacity(canSave ? 1 : 0.55))
+            HStack(spacing: 10) {
+                if isSaving {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                }
+
+                Text(isSaving ? "FINISHING WRAP..." : "SAVE")
+                    .font(.custom("Special Gothic Expanded One", size: 16))
+            }
+                .foregroundColor(.white.opacity(isSaving ? 0.85 : 1))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
-                .background(canSave ? saveButtonColor : saveButtonColor.opacity(0.5))
+                .background(saveButtonColor)
                 .clipShape(RoundedRectangle(cornerRadius: 30))
         }
-        .disabled(!canSave)
-        .accessibilityLabel("Save session")
-        .accessibilityHint(canSave ? "Saves your title and exports the session video" : "Add a title, description, or snapshot to save")
+        .disabled(isSaving)
+        .accessibilityLabel(isSaving ? "Finishing session wrap" : "Save session")
+        .accessibilityHint(accessibilitySaveHint)
         .accessibilityInputLabels(["save", "save session", "export"])
+        .accessibilityAddTraits(isSaving ? .updatesFrequently : [])
+    }
+
+    private var accessibilitySaveHint: String {
+        if isSaving {
+            return "Please wait while Rush Hour generates and saves your wrap"
+        }
+        return "Saves your session details and exports the session video"
+    }
+
+    private var exportTitle: String {
+        let trimmed = sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Untitled session" : trimmed
+    }
+
+    private var currentSessionDuration: TimeInterval {
+        sessions.first(where: { $0.id == sessionId })?.actualDuration ?? 0
+    }
+
+    private func scheduleBackgroundWrapExport() {
+        guard !isSaving else { return }
+        backgroundWrapTask?.cancel()
+        let title = exportTitle
+        let duration = currentSessionDuration
+        backgroundWrapTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled else { return }
+            sessionRecording.prepareTitledExport(title, durationSeconds: duration)
+        }
     }
 
     private func saveSession() {
+        guard !isSaving else { return }
+
+        backgroundWrapTask?.cancel()
+        isSaving = true
         var sessionDuration: TimeInterval = 0
         if let session = sessions.first(where: { $0.id == sessionId }) {
             session.title = sessionTitle
@@ -298,31 +345,36 @@ struct SessionDetails: View {
             session.snapshotImages = uploadedSnapshots.compactMap {
                 $0.jpegData(compressionQuality: 0.8)
             }
-            if let path = sessionRecording.finalVideoURL?.path {
-                session.wrappedVideoPath = path
-            }
             if let rawPath = sessionRecording.rawClipURL?.path {
                 session.rawClipPath = rawPath
             }
             sessionDuration = session.actualDuration
             try? context.save()
         }
-        // Re-render the wrap with the chosen title (the first export ran before the title
-        // existed). FinishSessionScreen's finalVideoURL observer then updates wrappedVideoPath.
-        // Burn in the session's actual focus duration as the hero number.
-        let trimmed = sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        sessionRecording.reexportWithTitle(
-            trimmed.isEmpty ? "Untitled session" : trimmed,
-            durationSeconds: sessionDuration
-        )
-        // Export the activity snapshots to Photos too (like the wrap video).
+
+        // Burn in the user's title and the session's actual focus duration as the hero number.
         let snapshotsToExport = uploadedSnapshots
-        Task {
-            for image in snapshotsToExport {
-                try? await PhotoLibrarySaver.saveImage(image)
+        sessionRecording.reexportWithTitle(
+            exportTitle,
+            durationSeconds: sessionDuration
+        ) { finalURL in
+            if let finalURL,
+               let session = sessions.first(where: { $0.id == sessionId }) {
+                session.wrappedVideoPath = finalURL.path
+                try? context.save()
+            }
+
+            Task {
+                for image in snapshotsToExport {
+                    try? await PhotoLibrarySaver.saveImage(image)
+                }
+
+                await MainActor.run {
+                    isSaving = false
+                    onSave?()
+                }
             }
         }
-        onSave?()
     }
 }
 

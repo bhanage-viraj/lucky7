@@ -63,6 +63,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        SessionNotifications.cancelAwayNudges()
         return true
     }
 
@@ -71,6 +72,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     func applicationWillTerminate(_ application: UIApplication) {
         ManagedSettingsStore(named: ManagedSettingsStore.Name("rushhour.focus")).clearAllSettings()
         SharedJailbreakStore.endSession()
+        SessionNotifications.cancelAwayNudges()
     }
 
     // Foreground delivery — show the banner AND drive the return.

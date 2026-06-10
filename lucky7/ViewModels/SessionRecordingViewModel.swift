@@ -30,10 +30,28 @@ final class SessionRecordingViewModel: ObservableObject {
     private var plannedSessionSeconds: TimeInterval = 0
     private var recordedWallClockSeconds: TimeInterval = 0
     private var didCaptureThisSession = false
-    private var exportCompletions: [() -> Void] = []
+    private var stopCompletions: [() -> Void] = []
+    private var isStoppingRecording = false
+    private var isCleanSliceExporting = false
+    private var cleanSliceToken = UUID()
+    private var cleanSliceRawURL: URL?
+    private var rawURLsPendingDeletion: Set<URL> = []
+    private var pendingTitleExport: PendingTitleExport?
+    private var activeTitleExportTitle: String?
+    private var activeTitleExportCompletions: [(URL?) -> Void] = []
+    private var activeTitleExportShouldSaveToPhotos = false
+    private var completedTitleExportTitle: String?
+    private var completedTitleExportSavedToPhotos = false
     // Kept until the user titles the session, so the wrap can be re-rendered with the title.
     private var retainedRawURL: URL?
     private var lastExportFrameCount: Int = 0
+
+    private struct PendingTitleExport {
+        let title: String
+        let durationSeconds: TimeInterval
+        let saveToPhotos: Bool
+        let completions: [(URL?) -> Void]
+    }
 
     var captureSession: AVCaptureSession {
         timelapseManager.captureSession
@@ -67,14 +85,19 @@ final class SessionRecordingViewModel: ObservableObject {
         timelapseManager.stopRunning()
     }
 
-    func startRecording(plannedSessionSeconds: TimeInterval) {
+    func startRecording(plannedSessionSeconds: TimeInterval, completion: ((Bool) -> Void)? = nil) {
         guard cameraReady else {
             lastError = "Camera is not ready yet."
+            completion?(false)
             return
         }
-        guard !isRecording else { return }
+        guard !isRecording else {
+            completion?(true)
+            return
+        }
 
         finalVideoURL = nil
+        rawClipURL = nil
         previewFrames = []
         lastError = nil
         savedToPhotos = false
@@ -95,6 +118,7 @@ final class SessionRecordingViewModel: ObservableObject {
                     self.lastError = "Could not start recording."
                     self.statusMessage = nil
                 }
+                completion?(started)
             }
         }
     }
@@ -121,96 +145,102 @@ final class SessionRecordingViewModel: ObservableObject {
             recordedWallClockSeconds = wallClockSeconds
         }
 
-        exportCompletions.append(completion)
+        stopCompletions.append(completion)
 
-        if isExporting {
+        if isStoppingRecording {
             return
         }
 
         guard isRecording || didCaptureThisSession else {
-            finishExportCompletions()
+            finishStopCompletions()
             return
         }
 
         isRecording = false
-        isExporting = true
+        isStoppingRecording = true
         ScreenWakeLock.setActive(true)
-        statusMessage = "Saving your session video…"
-        AccessibilitySupport.announce("Recording stopped. Saving your video")
+        statusMessage = "Preparing your session…"
+        AccessibilitySupport.announce("Recording stopped. Preparing your session")
 
         timelapseManager.stopRecording { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
+                self.isStoppingRecording = false
 
                 guard let rawURL = result.url, result.frameCount > 0 else {
+                    let pending = self.pendingTitleExport
+                    self.pendingTitleExport = nil
                     self.isExporting = false
+                    self.activeTitleExportTitle = nil
+                    self.activeTitleExportCompletions.removeAll()
+                    self.activeTitleExportShouldSaveToPhotos = false
                     self.didCaptureThisSession = false
                     self.lastError = "No video was captured. Record for a few seconds on a real device, then end the session."
                     self.statusMessage = nil
-                    self.finishExportCompletions()
+                    pending?.completions.forEach { $0(nil) }
+                    self.finishStopCompletions()
                     return
                 }
 
-                let wallClock = self.recordedWallClockSeconds > 0
-                    ? self.recordedWallClockSeconds
-                    : 0
-                let planned = self.plannedSessionSeconds
-
-                self.exportEngine.generateWrappedVideo(
-                    rawVideoURL: rawURL,
-                    capturedFrameCount: result.frameCount,
-                    overlay: self.makeOverlay(durationSeconds: wallClock),
-                    sessionWallClockSeconds: wallClock > 0 ? wallClock : nil,
-                    plannedSessionSeconds: planned > 0 ? planned : nil
-                ) { [weak self] finalURL in
-                    Task { @MainActor in
-                        guard let self else { return }
-
-                        self.isExporting = false
-
-                        guard let finalURL else {
-                            self.lastError = "Could not stitch session video."
-                            self.statusMessage = nil
-                            self.didCaptureThisSession = false
-                            self.finishExportCompletions()
-                            return
-                        }
-
-                        self.finalVideoURL = finalURL
-                        self.previewFrames = Self.extractPreviewFrames(from: finalURL, count: 3)
-                        self.didCaptureThisSession = false
-                        self.statusMessage = "Video saved"
-                        AccessibilitySupport.announce("Export completed")
-                        self.lastExportFrameCount = result.frameCount
-                        // Keep the raw so the wrap can be re-rendered with the title later
-                        // (and so the Photos copy is the titled one — see reexportWithTitle).
-                        self.retainedRawURL = rawURL
-
-                        // Persist a short text-free slice for weekly/monthly recaps.
-                        let sliceURL = WrapStorage.newSessionSliceURL()
-                        Task { [weak self] in
-                            let ok = await ExportEngine.shared.generateCleanSlice(
-                                rawVideoURL: rawURL,
-                                sliceSeconds: WrapRollupService.sliceSeconds,
-                                outputURL: sliceURL
-                            )
-                            await MainActor.run {
-                                if ok { self?.rawClipURL = sliceURL }
-                            }
-                        }
-
-                        self.finishExportCompletions()
-                    }
+                self.retainedRawURL = rawURL
+                self.lastExportFrameCount = result.frameCount
+                self.previewFrames = Self.extractPreviewFrames(from: rawURL, count: 3)
+                self.didCaptureThisSession = false
+                self.statusMessage = "Ready to save"
+                self.startCleanSliceExport(from: rawURL)
+                let pending = self.pendingTitleExport
+                self.pendingTitleExport = nil
+                self.finishStopCompletions()
+                if let pending {
+                    self.startTitleExport(
+                        pending.title,
+                        durationSeconds: pending.durationSeconds,
+                        saveToPhotos: pending.saveToPhotos,
+                        completions: pending.completions
+                    )
+                } else {
+                    self.prepareTitledExport("Untitled session", durationSeconds: self.recordedWallClockSeconds)
                 }
             }
         }
     }
 
-    private func finishExportCompletions() {
-        let completions = exportCompletions
-        exportCompletions.removeAll()
+    private func finishStopCompletions() {
+        let completions = stopCompletions
+        stopCompletions.removeAll()
         ScreenWakeLock.release()
         completions.forEach { $0() }
+    }
+
+    private func startCleanSliceExport(from rawURL: URL) {
+        isCleanSliceExporting = true
+        cleanSliceToken = UUID()
+        let token = cleanSliceToken
+        cleanSliceRawURL = rawURL
+        let sliceURL = WrapStorage.newSessionSliceURL()
+        Task { [weak self] in
+            let ok = await ExportEngine.shared.generateCleanSlice(
+                rawVideoURL: rawURL,
+                sliceSeconds: WrapRollupService.sliceSeconds,
+                outputURL: sliceURL
+            )
+            await MainActor.run {
+                guard let self else { return }
+                let isCurrentSlice = self.cleanSliceToken == token
+                if ok, isCurrentSlice {
+                    self.rawClipURL = sliceURL
+                } else {
+                    try? FileManager.default.removeItem(at: sliceURL)
+                }
+                if self.rawURLsPendingDeletion.remove(rawURL) != nil {
+                    try? FileManager.default.removeItem(at: rawURL)
+                }
+                guard isCurrentSlice, self.cleanSliceRawURL == rawURL else { return }
+
+                self.isCleanSliceExporting = false
+                self.cleanSliceRawURL = nil
+            }
+        }
     }
 
     func resetForNewSession() {
@@ -219,8 +249,18 @@ final class SessionRecordingViewModel: ObservableObject {
         isExporting = false
         finalVideoURL = nil
         rawClipURL = nil
-        if let raw = retainedRawURL { try? FileManager.default.removeItem(at: raw) }
-        retainedRawURL = nil
+        let activeCleanSliceRawURL = cleanSliceRawURL
+        cleanSliceToken = UUID()
+        isCleanSliceExporting = false
+        cleanSliceRawURL = nil
+        if let raw = retainedRawURL {
+            if activeCleanSliceRawURL == raw {
+                rawURLsPendingDeletion.insert(raw)
+            } else {
+                try? FileManager.default.removeItem(at: raw)
+            }
+            retainedRawURL = nil
+        }
         lastExportFrameCount = 0
         previewFrames = []
         lastError = nil
@@ -230,7 +270,13 @@ final class SessionRecordingViewModel: ObservableObject {
         plannedSessionSeconds = 0
         recordedWallClockSeconds = 0
         didCaptureThisSession = false
-        exportCompletions.removeAll()
+        pendingTitleExport = nil
+        activeTitleExportTitle = nil
+        activeTitleExportCompletions.removeAll()
+        activeTitleExportShouldSaveToPhotos = false
+        completedTitleExportTitle = nil
+        completedTitleExportSavedToPhotos = false
+        stopCompletions.removeAll()
         timelapseManager.capturePaused = false
     }
 
@@ -258,6 +304,8 @@ final class SessionRecordingViewModel: ObservableObject {
     }
 
     static func extractPreviewFrames(from url: URL, count: Int) -> [UIImage] {
+        guard count > 0 else { return [] }
+
         let asset = AVURLAsset(url: url)
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
@@ -265,18 +313,34 @@ final class SessionRecordingViewModel: ObservableObject {
 
         let totalSeconds = max(CMTimeGetSeconds(asset.duration), 0.1)
         var images: [UIImage] = []
+        let primaryTimes = previewFrameTimes(totalSeconds: totalSeconds, count: count)
+        let fallbackTimes = [0.0, totalSeconds * 0.25, totalSeconds * 0.5, totalSeconds * 0.75, totalSeconds * 0.95]
+        var attemptedTimes: [Double] = []
 
-        for index in 0..<count {
-            let fraction = count == 1 ? 0.5 : Double(index) / Double(count - 1)
-            let seconds = totalSeconds * fraction
-            let time = CMTime(seconds: seconds, preferredTimescale: 600)
+        for seconds in primaryTimes + fallbackTimes {
+            guard images.count < count else { break }
+            let clampedSeconds = min(max(seconds, 0), totalSeconds)
+            guard !attemptedTimes.contains(where: { abs($0 - clampedSeconds) < 0.01 }) else { continue }
+            attemptedTimes.append(clampedSeconds)
 
+            let time = CMTime(seconds: clampedSeconds, preferredTimescale: 600)
             if let cgImage = try? generator.copyCGImage(at: time, actualTime: nil) {
                 images.append(UIImage(cgImage: cgImage))
             }
         }
 
         return images
+    }
+
+    private static func previewFrameTimes(totalSeconds: Double, count: Int) -> [Double] {
+        guard count > 1 else { return [0] }
+        guard count > 2 else {
+            return [0, Double.random(in: (totalSeconds * 0.55)...(totalSeconds * 0.95))]
+        }
+
+        let middle = Double.random(in: (totalSeconds * 0.33)...(totalSeconds * 0.66))
+        let late = Double.random(in: (totalSeconds * 0.70)...(totalSeconds * 0.95))
+        return [0, middle, late]
     }
 
     private func makeOverlay(durationSeconds: TimeInterval, title: String = "Untitled session") -> ExportEngine.WrappedVideoOverlay {
@@ -295,12 +359,144 @@ final class SessionRecordingViewModel: ObservableObject {
         )
     }
 
-    /// Re-renders the session wrap with the user's title (entered after the first export)
-    /// and saves the titled version to Photos.
-    func reexportWithTitle(_ title: String, durationSeconds: TimeInterval = 0) {
-        guard let raw = retainedRawURL else { return }
-        retainedRawURL = nil
+    func prepareTitledExport(_ title: String, durationSeconds: TimeInterval = 0) {
+        reexportWithTitle(title, durationSeconds: durationSeconds, saveToPhotos: false)
+    }
+
+    /// Re-renders the session wrap with the user's title and optionally saves it to Photos.
+    func reexportWithTitle(
+        _ title: String,
+        durationSeconds: TimeInterval = 0,
+        saveToPhotos: Bool = true,
+        completion: ((URL?) -> Void)? = nil
+    ) {
+        let exportTitle = normalizedTitle(title)
+
+        if let finalVideoURL, completedTitleExportTitle == exportTitle {
+            finishCachedTitleExport(
+                finalVideoURL,
+                saveToPhotos: saveToPhotos,
+                completion: completion
+            )
+            return
+        }
+
+        guard !isExporting else {
+            if activeTitleExportTitle == exportTitle {
+                if let completion {
+                    activeTitleExportCompletions.append(completion)
+                }
+                if saveToPhotos {
+                    activeTitleExportShouldSaveToPhotos = true
+                }
+            } else {
+                queuePendingTitleExport(
+                    title: exportTitle,
+                    durationSeconds: durationSeconds,
+                    saveToPhotos: saveToPhotos,
+                    completion: completion
+                )
+            }
+            return
+        }
+
+        guard retainedRawURL != nil, lastExportFrameCount > 0 else {
+            if isStoppingRecording {
+                isExporting = true
+                activeTitleExportTitle = exportTitle
+                activeTitleExportCompletions = completion.map { [$0] } ?? []
+                activeTitleExportShouldSaveToPhotos = saveToPhotos
+                statusMessage = "Generating your Wrap…"
+                ScreenWakeLock.setActive(true)
+                pendingTitleExport = PendingTitleExport(
+                    title: exportTitle,
+                    durationSeconds: durationSeconds,
+                    saveToPhotos: saveToPhotos,
+                    completions: completion.map { [$0] } ?? []
+                )
+            } else {
+                completion?(finalVideoURL)
+            }
+            return
+        }
+
+        startTitleExport(
+            exportTitle,
+            durationSeconds: durationSeconds,
+            saveToPhotos: saveToPhotos,
+            completions: completion.map { [$0] } ?? []
+        )
+    }
+
+    private func normalizedTitle(_ title: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Untitled session" : trimmed
+    }
+
+    private func queuePendingTitleExport(
+        title: String,
+        durationSeconds: TimeInterval,
+        saveToPhotos: Bool,
+        completion: ((URL?) -> Void)?
+    ) {
+        let newCompletions = completion.map { [$0] } ?? []
+        if let existingPending = pendingTitleExport, existingPending.title == title {
+            pendingTitleExport = PendingTitleExport(
+                title: title,
+                durationSeconds: durationSeconds,
+                saveToPhotos: existingPending.saveToPhotos || saveToPhotos,
+                completions: existingPending.completions + newCompletions
+            )
+        } else {
+            pendingTitleExport = PendingTitleExport(
+                title: title,
+                durationSeconds: durationSeconds,
+                saveToPhotos: saveToPhotos,
+                completions: newCompletions
+            )
+        }
+    }
+
+    private func finishCachedTitleExport(
+        _ url: URL,
+        saveToPhotos: Bool,
+        completion: ((URL?) -> Void)?
+    ) {
+        guard saveToPhotos, !completedTitleExportSavedToPhotos else {
+            completion?(url)
+            return
+        }
+
         isExporting = true
+        statusMessage = "Saving your Wrap…"
+        ScreenWakeLock.setActive(true)
+        Task { @MainActor in
+            await saveToPhotosIfPossible(videoURL: url)
+            completedTitleExportSavedToPhotos = savedToPhotos
+            isExporting = false
+            statusMessage = nil
+            ScreenWakeLock.release()
+            completion?(url)
+        }
+    }
+
+    private func startTitleExport(
+        _ title: String,
+        durationSeconds: TimeInterval,
+        saveToPhotos: Bool,
+        completions: [(URL?) -> Void]
+    ) {
+        guard let raw = retainedRawURL, lastExportFrameCount > 0 else {
+            completions.forEach { $0(finalVideoURL) }
+            return
+        }
+
+        isExporting = true
+        activeTitleExportTitle = title
+        activeTitleExportCompletions = completions
+        activeTitleExportShouldSaveToPhotos = saveToPhotos
+        statusMessage = "Generating your Wrap…"
+        ScreenWakeLock.setActive(true)
         // Prefer the session's actual duration; fall back to the recorded wall-clock.
         let secs = durationSeconds > 0 ? durationSeconds : recordedWallClockSeconds
         exportEngine.generateWrappedVideo(
@@ -310,12 +506,49 @@ final class SessionRecordingViewModel: ObservableObject {
         ) { [weak self] finalURL in
             Task { @MainActor in
                 guard let self else { return }
+                let finishedTitle = self.activeTitleExportTitle
+                let callbacks = self.activeTitleExportCompletions
+                let shouldSaveToPhotos = self.activeTitleExportShouldSaveToPhotos
+                self.activeTitleExportTitle = nil
+                self.activeTitleExportCompletions.removeAll()
+                self.activeTitleExportShouldSaveToPhotos = false
                 self.isExporting = false
+                self.statusMessage = nil
                 if let finalURL {
                     self.finalVideoURL = finalURL
-                    await self.saveToPhotosIfPossible(videoURL: finalURL)
+                    self.completedTitleExportTitle = finishedTitle
+                    self.completedTitleExportSavedToPhotos = false
+                    if shouldSaveToPhotos {
+                        await self.saveToPhotosIfPossible(videoURL: finalURL)
+                        self.completedTitleExportSavedToPhotos = self.savedToPhotos
+                    }
+                } else {
+                    self.lastError = "Could not stitch session video."
                 }
-                try? FileManager.default.removeItem(at: raw)
+                ScreenWakeLock.release()
+                callbacks.forEach { $0(finalURL) }
+
+                let pending = self.pendingTitleExport
+                self.pendingTitleExport = nil
+                if let pending {
+                    if let finalVideoURL = self.finalVideoURL,
+                       self.completedTitleExportTitle == pending.title {
+                        self.finishCachedTitleExport(
+                            finalVideoURL,
+                            saveToPhotos: pending.saveToPhotos,
+                            completion: { url in
+                                pending.completions.forEach { $0(url) }
+                            }
+                        )
+                    } else {
+                        self.startTitleExport(
+                            pending.title,
+                            durationSeconds: pending.durationSeconds,
+                            saveToPhotos: pending.saveToPhotos,
+                            completions: pending.completions
+                        )
+                    }
+                }
             }
         }
     }

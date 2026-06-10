@@ -137,7 +137,7 @@ struct FloatingTabBar: View {
             tabButton(index: 1, systemImage: "calendar.badge.clock")
         }
         .padding(.horizontal, 5)
-        .padding(.vertical, 7)
+        .padding(.vertical, 5)
         .background {
             Capsule()
                 .fill(.ultraThinMaterial)

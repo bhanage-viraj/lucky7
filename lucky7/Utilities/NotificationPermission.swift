@@ -24,3 +24,36 @@ enum NotificationPermission {
         await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .denied
     }
 }
+
+enum SessionNotifications {
+    static let awayNudgeIds = ["rushhour.awaynudge.1", "rushhour.awaynudge.2"]
+
+    static func scheduleAwayNudges() {
+        let center = UNUserNotificationCenter.current()
+        cancelAwayNudges()
+
+        for (index, minutes) in [10, 20].enumerated() {
+            let content = UNMutableNotificationContent()
+            content.title = "Are you still there?"
+            content.body = "Your focus session is paused — tap to jump back in."
+            content.sound = .default
+
+            let trigger = UNTimeIntervalNotificationTrigger(
+                timeInterval: TimeInterval(minutes * 60),
+                repeats: false
+            )
+            let request = UNNotificationRequest(
+                identifier: awayNudgeIds[index],
+                content: content,
+                trigger: trigger
+            )
+            center.add(request)
+        }
+    }
+
+    static func cancelAwayNudges() {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: awayNudgeIds)
+        center.removeDeliveredNotifications(withIdentifiers: awayNudgeIds)
+    }
+}
