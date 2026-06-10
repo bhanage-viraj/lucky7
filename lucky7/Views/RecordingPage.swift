@@ -767,8 +767,8 @@ struct RecordingPage: View {
 
 // MARK: - Countdown housing
 //
-// Compact, label-less version of the home traffic housing: three Trafficshell1
-// grille panels in a dark rounded bar, showing the live remaining time.
+// Compact, label-less version of the home traffic housing: three split shell
+// layers in a dark rounded bar, showing the live remaining time.
 
 private struct RecordingTrafficTimer: View {
     let hours: Int
@@ -800,18 +800,38 @@ private struct RecordingTrafficTimer: View {
     }
 
     private func panel(text: String) -> some View {
-        let h = panelSize * 129.0 / 117.0   // native Trafficshell1 ratio
-        return ZStack {
-            Image("Trafficshell1")
+        let lensDiameter = panelSize * 0.68
+        let lensArtDiameter = panelSize * (87.27 / 99.36)
+        let shellShadowHeight = panelSize * (26.69 / 99.36)
+        let shellShadowWidth = panelSize * (99.41 / 99.36)
+        let lensTop = (panelSize - lensArtDiameter) / 2
+        let wheelTop = (panelSize - lensDiameter) / 2
+
+        return ZStack(alignment: .top) {
+            Image("TrafficShellShadow")
                 .resizable()
-                .frame(width: panelSize, height: h)
-                .accessibilityDecorative()
+                .frame(width: shellShadowWidth, height: shellShadowHeight)
+                .offset(y: panelSize)
+
+            Image("TrafficShellBg")
+                .resizable()
+                .frame(width: panelSize, height: panelSize)
+
+            Image("TrafficShell")
+                .resizable()
+                .frame(width: lensArtDiameter, height: lensArtDiameter)
+                .offset(y: lensTop)
+
             Text(text)
-                .font(.system(size: 30, weight: .black, design: .rounded))
-                .italic()
+                .font(.custom("Special Gothic Expanded One", size: panelSize * 0.4))
                 .foregroundStyle(.white)
-                .offset(y: -h * 0.12)   // nudge onto the grille center
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(width: lensDiameter, height: lensDiameter)
+                .clipShape(Circle())
+                .offset(y: wheelTop)
         }
+        .frame(width: panelSize, height: panelSize)
     }
 }
 

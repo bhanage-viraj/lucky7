@@ -53,7 +53,8 @@ struct Loading: View {
 
                     if !tabBarVisibility.isHidden {
                         FloatingTabBar(selection: $selectedTab)
-                            .padding(.bottom, 4)
+                            .padding(.bottom, 0)
+                            .offset(y: 10)
                             .zIndex(2)
                             .transition(.opacity)
                     }
@@ -131,22 +132,19 @@ struct FloatingTabBar: View {
     @Binding var selection: Int
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             tabButton(index: 0, systemImage: "timer")
             tabButton(index: 1, systemImage: "calendar.badge.clock")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(
+        .padding(.horizontal, 5)
+        .padding(.vertical, 7)
+        .background {
             Capsule()
-                .fill(Color.white)
-                .shadow(color: .black.opacity(0.18), radius: 10, x: 0, y: 5)
-        )
-        .overlay(
-            Capsule().stroke(Color.black.opacity(0.06), lineWidth: 1)
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Tab bar")
+                .fill(.ultraThinMaterial)
+                .overlay(Capsule().fill(Color.white.opacity(0.5)))
+                .overlay(Capsule().strokeBorder(Color.black, lineWidth: 1))
+                .shadow(color: .black.opacity(0.25), radius: 1.3)
+        }
     }
 
     private func tabButton(index: Int, systemImage: String) -> some View {
@@ -156,11 +154,11 @@ struct FloatingTabBar: View {
             withAnimation(.easeInOut(duration: 0.2)) { selection = index }
         } label: {
             Image(systemName: systemImage)
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundColor(isSelected ? .white : .black)
-                .frame(width: 76, height: 48)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(selection == index ? .white : .black)
+                .frame(width: 64, height: 48)
                 .background(
-                    Capsule().fill(isSelected ? Color.black : Color.clear)
+                    Capsule().fill(selection == index ? Color(red: 9 / 255, green: 9 / 255, blue: 9 / 255) : Color.clear)
                 )
         }
         .buttonStyle(.plain)
