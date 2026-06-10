@@ -350,13 +350,152 @@ final class ExportEngine {
                 ?? UIFont.systemFont(ofSize: size, weight: .black)
         }
 
-        func textLayer(_ text: String, font: UIFont, frame: CGRect, alpha: CGFloat = 1) -> CATextLayer {
+        func paragraphStyle(for font: UIFont, lineBreakMode: NSLineBreakMode) -> NSMutableParagraphStyle {
+            let style = NSMutableParagraphStyle()
+            style.alignment = .center
+            style.lineBreakMode = lineBreakMode
+            style.minimumLineHeight = font.pointSize * 1.10
+            style.maximumLineHeight = font.pointSize * 1.10
+            return style
+        }
+
+        func attributedText(
+            _ text: String,
+            font: UIFont,
+            alpha: CGFloat,
+            lineBreakMode: NSLineBreakMode
+        ) -> NSAttributedString {
+            NSAttributedString(
+                string: text,
+                attributes: [
+                    .font: font,
+                    .foregroundColor: UIColor.white.withAlphaComponent(alpha),
+                    .paragraphStyle: paragraphStyle(for: font, lineBreakMode: lineBreakMode)
+                ]
+            )
+        }
+
+        func measuredTextWidth(_ text: String, font: UIFont) -> CGFloat {
+            let bounds = (text as NSString).boundingRect(
+                with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: font.lineHeight * 1.4),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [.font: font],
+                context: nil
+            )
+            return ceil(bounds.width)
+        }
+
+        func ellipsizedLine(_ text: String, font: UIFont, maxWidth: CGFloat) -> String {
+            let ellipsis = "..."
+            var base = text.trimmingCharacters(in: .whitespaces)
+
+            guard measuredTextWidth(base, font: font) > maxWidth else { return base }
+            guard measuredTextWidth(ellipsis, font: font) <= maxWidth else { return "" }
+
+            while !base.isEmpty {
+                if measuredTextWidth(base + ellipsis, font: font) <= maxWidth {
+                    return base + ellipsis
+                }
+                base.removeLast()
+            }
+
+            return ellipsis
+        }
+
+        func wrappedHeaderLines(
+            _ text: String,
+            font: UIFont,
+            maxWidth: CGFloat,
+            maxLines: Int,
+            truncatesOverflow: Bool = false
+        ) -> (lines: [String], didFit: Bool) {
+            let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedText.isEmpty else { return ([], true) }
+
+            var lines: [String] = []
+            var current = ""
+            var didFit = true
+
+            for character in trimmedText {
+                let next = current + String(character)
+                if current.isEmpty || measuredTextWidth(next, font: font) <= maxWidth {
+                    current = next
+                    continue
+                }
+
+                if lines.count == maxLines - 1 {
+                    lines.append(
+                        truncatesOverflow
+                        ? ellipsizedLine(next, font: font, maxWidth: maxWidth)
+                        : current.trimmingCharacters(in: .whitespaces)
+                    )
+                    didFit = false
+                    current = ""
+                    break
+                }
+
+                let line = current.trimmingCharacters(in: .whitespaces)
+                if !line.isEmpty {
+                    lines.append(line)
+                }
+
+                if lines.count >= maxLines {
+                    didFit = false
+                    current = ""
+                    break
+                }
+
+                current = String(character).trimmingCharacters(in: .whitespaces)
+            }
+
+            let lastLine = current.trimmingCharacters(in: .whitespaces)
+            if !lastLine.isEmpty {
+                if lines.count < maxLines {
+                    lines.append(lastLine)
+                } else {
+                    if truncatesOverflow, let last = lines.indices.last {
+                        lines[last] = ellipsizedLine(lines[last] + lastLine, font: font, maxWidth: maxWidth)
+                    }
+                    didFit = false
+                }
+            }
+
+            return (lines, didFit)
+        }
+
+        func fittedHeaderLayout(_ text: String, maxLines: Int, width: CGFloat) -> (font: UIFont, text: String, lineCount: Int) {
+            let baseSize = maxSide * 0.040
+            let minimumSize = maxSide * 0.018
+            var size = baseSize
+
+            while size > minimumSize {
+                let font = gothic(size)
+                let wrapped = wrappedHeaderLines(text, font: font, maxWidth: width, maxLines: maxLines)
+                if wrapped.didFit, !wrapped.lines.isEmpty {
+                    return (font, wrapped.lines.joined(separator: "\n"), wrapped.lines.count)
+                }
+                size -= 2
+            }
+
+            let font = gothic(minimumSize)
+            let wrapped = wrappedHeaderLines(text, font: font, maxWidth: width, maxLines: maxLines, truncatesOverflow: true)
+            let lines = wrapped.lines.isEmpty ? [text] : wrapped.lines
+            return (font, lines.joined(separator: "\n"), lines.count)
+        }
+
+        func textLayer(
+            _ text: String,
+            font: UIFont,
+            frame: CGRect,
+            alpha: CGFloat = 1,
+            lineBreakMode: NSLineBreakMode = .byWordWrapping
+        ) -> CATextLayer {
             let t = CATextLayer()
-            t.string = text
+            t.string = attributedText(text, font: font, alpha: alpha, lineBreakMode: lineBreakMode)
             t.alignmentMode = .center
             t.isWrapped = true
             t.contentsScale = UIScreen.main.scale
-            t.foregroundColor = UIColor.white.withAlphaComponent(alpha).cgColor
+            t.truncationMode = .none
             t.shadowColor = UIColor.black.cgColor
             t.shadowOpacity = 0.9
             t.shadowRadius = 6
@@ -375,13 +514,18 @@ final class ExportEngine {
         let topMargin = renderSize.height * 0.06
 
         // 1. Header — session title, week range, or "<Month> Rewind" (topmost line).
-        let headerFont = gothic(maxSide * 0.040)
-        let headerHeight = headerFont.pointSize * 1.4
+        let headerMaxLines = 2
+        let headerWrapWidth = contentWidth * 0.84
+        let headerLayout = fittedHeaderLayout(overlay.header, maxLines: headerMaxLines, width: headerWrapWidth)
+        let headerFont = headerLayout.font
+        let headerLineHeight = headerFont.pointSize * 1.10
+        let headerHeight = headerLineHeight * CGFloat(max(headerLayout.lineCount, 1)) + headerFont.pointSize * 0.20
         let headerY = renderSize.height - topMargin - headerHeight
         layer.addSublayer(textLayer(
-            overlay.header, font: headerFont,
+            headerLayout.text, font: headerFont,
             frame: CGRect(x: padding, y: headerY, width: contentWidth, height: headerHeight),
-            alpha: 1
+            alpha: 1,
+            lineBreakMode: .byCharWrapping
         ))
 
         // 2. Duration — the large hero line, just below the header.

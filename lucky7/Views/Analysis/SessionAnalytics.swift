@@ -5,6 +5,7 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct SessionAnalytics: View {
     var sessionId: UUID
@@ -24,6 +25,7 @@ struct SessionAnalytics: View {
     @State private var extractedThumbnail: UIImage?
     @State private var showDeleteConfirm = false
     @State private var fullscreenSnapshot: FullscreenSnapshot?
+    @State private var imageSharePayload: ImageSharePayload?
 
     init(sessionId: UUID, videoFrames: [UIImage] = [], onClose: (() -> Void)? = nil) {
         self.sessionId = sessionId
@@ -77,24 +79,23 @@ struct SessionAnalytics: View {
         formatDuration(distractionStat.totalDistractionDuration)
     }
 
+    private var dateText: String {
+        guard let start = session?.startTime else { return "" }
+        return start
+            .formatted(.dateTime.day().month(.abbreviated).year())
+            .uppercased()
+    }
+
     private var distractionCountText: String {
         distractionStat.distractionCount == 0 ? "-" : "\(distractionStat.distractionCount)x"
     }
 
     private var shareableVideoURL: URL? {
-        guard let path = session?.wrappedVideoPath else { return nil }
-        return URL(fileURLWithPath: path)
+        playableVideoURL
     }
 
-    private var shareableText: String {
-        """
-        \(displayTitle)
-
-        Whole session: \(wholeSessionText)
-        Focus: \(focusDurationText) · Distracted: \(distractedDurationText) (\(distractionCountText))
-
-        \(displaySummary)
-        """
+    private var playableVideoURL: URL? {
+        existingFileURL(path: session?.wrappedVideoPath)
     }
 
     // MARK: - Body
@@ -116,6 +117,8 @@ struct SessionAnalytics: View {
                         Image(systemName: "xmark")
                             .font(.system(size: 20, weight: .bold))
                             .foregroundColor(.white)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .accessibilityLabel("Close")
                     .accessibilityHint("Closes session analytics")
@@ -166,28 +169,56 @@ struct SessionAnalytics: View {
         .fullScreenCover(item: $fullscreenSnapshot) { item in
             SnapshotViewer(images: savedSnapshots, startIndex: item.id)
         }
+        .sheet(item: $imageSharePayload) { payload in
+            ImageShareSheet(payload: payload)
+        }
     }
 
     // MARK: - Subviews
-    @ViewBuilder
     private var shareButton: some View {
-        if let videoURL = shareableVideoURL {
-            ShareLink(item: videoURL, preview: SharePreview(displayTitle)) {
-                shareIcon
-            }
-        } else {
-            ShareLink(item: shareableText, preview: SharePreview(displayTitle)) {
-                shareIcon
-            }
+        Button {
+            shareAnalyticsStory()
+        } label: {
+            shareIcon
         }
+        .buttonStyle(.plain)
+        .disabled(session == nil)
+    }
+
+    @MainActor
+    private func shareAnalyticsStory() {
+        guard session != nil else { return }
+
+        let payload = AnalyticsStoryPayload(
+            title: displayTitle,
+            summary: displaySummary,
+            date: dateText,
+            wholeSession: wholeSessionText,
+            focusDuration: focusDurationText,
+            distractionCount: distractionCountText,
+            distractedDuration: distractedDurationText,
+            thumbnail: thumbnailImage,
+            snapshots: savedSnapshots
+        )
+        let storySize = CGSize(width: 1080, height: 1920)
+        let renderer = ImageRenderer(
+            content: AnalyticsStoryImage(payload: payload)
+                .frame(width: storySize.width, height: storySize.height)
+        )
+        renderer.proposedSize = ProposedViewSize(storySize)
+        renderer.scale = 1
+
+        guard let image = renderer.uiImage else { return }
+        imageSharePayload = ImageSharePayload(image: image, title: displayTitle)
     }
 
     private var shareIcon: some View {
         Image(systemName: "square.and.arrow.up")
             .font(.system(size: 20, weight: .semibold))
             .foregroundColor(.white)
-            .accessibilityLabel("Share session")
-            .accessibilityHint("Share your session video or summary")
+            .opacity(session == nil ? 0.45 : 1)
+            .accessibilityLabel("Share session analytics")
+            .accessibilityHint("Opens sharing options for this session analytics")
             .accessibilityInputLabels(["share", "share session", "export"])
     }
 
@@ -232,16 +263,21 @@ struct SessionAnalytics: View {
             .clipShape(Circle())
             .overlay(Circle().stroke(Color.black, lineWidth: 3))
 
-            Button(action: { isShowingWrappedVideo = true }) {
+            Button(action: {
+                guard playableVideoURL != nil else { return }
+                isShowingWrappedVideo = true
+            }) {
                 Image(systemName: "play.fill")
                     .font(.system(size: 16, weight: .black))
                     .foregroundColor(.white)
                     .padding(15)
                     .background(Circle().fill(Color.black))
             }
+            .disabled(playableVideoURL == nil)
+            .opacity(playableVideoURL == nil ? 0.45 : 1)
             .offset(x: 5, y: 5)
             .accessibilityLabel("Play session wrap video")
-            .accessibilityHint("Opens the timelapse video for this session")
+            .accessibilityHint(playableVideoURL == nil ? "The wrap is still finishing" : "Opens the timelapse video for this session")
             .accessibilityInputLabels(["play", "play video", "watch wrap"])
         }
         .accessibilityElement(children: .contain)
@@ -359,6 +395,8 @@ struct SessionAnalytics: View {
                         Image(systemName: "xmark")
                             .font(.system(size: 16, weight: .bold))
                             .foregroundColor(.black)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .accessibilityLabel("Close")
                 }
@@ -446,6 +484,16 @@ struct SessionAnalytics: View {
         try? FileManager.default.removeItem(atPath: path)
     }
 
+    private func existingFileURL(path: String?) -> URL? {
+        guard let path, !path.isEmpty else { return nil }
+        return existingFileURL(URL(fileURLWithPath: path))
+    }
+
+    private func existingFileURL(_ url: URL?) -> URL? {
+        guard let url, FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return url
+    }
+
     /// Extracts a poster frame from the saved wrapped video when no live capture
     /// frames were passed in, so History still shows a real video frame (never a
     /// user snapshot). Decoding happens off the main thread.
@@ -460,6 +508,156 @@ struct SessionAnalytics: View {
             }
         }
         extractedThumbnail = frame
+    }
+}
+
+// MARK: - Analytics Story Share Image
+
+private struct AnalyticsStoryPayload {
+    let title: String
+    let summary: String
+    let date: String
+    let wholeSession: String
+    let focusDuration: String
+    let distractionCount: String
+    let distractedDuration: String
+    let thumbnail: UIImage?
+    let snapshots: [UIImage]
+}
+
+private struct AnalyticsStoryImage: View {
+    let payload: AnalyticsStoryPayload
+
+    var body: some View {
+        ZStack {
+            Color("CanvasBlue")
+
+            Image("PatternBackground")
+                .resizable()
+                .scaledToFill()
+                .opacity(0.95)
+
+            VStack(spacing: 34) {
+                Spacer(minLength: 120)
+
+                VStack(spacing: 16) {
+                    Text("SESSION RECAP")
+                        .font(.system(size: 34, weight: .black))
+                        .foregroundStyle(.white.opacity(0.78))
+
+                    Text(payload.title)
+                        .font(.custom("Special Gothic Expanded One", size: 66))
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.72)
+                        .frame(maxWidth: .infinity)
+
+                    if !payload.date.isEmpty {
+                        Text(payload.date)
+                            .font(.system(size: 34, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.82))
+                    }
+                }
+
+                thumbnail
+
+                storyCard {
+                    VStack(spacing: 32) {
+                        HStack(spacing: 24) {
+                            storyStat(title: "Whole Session", value: payload.wholeSession)
+                            storyStat(title: "Focus Duration", value: payload.focusDuration)
+                        }
+                        HStack(spacing: 24) {
+                            storyStat(title: "Distraction Count", value: payload.distractionCount)
+                            storyStat(title: "Distracted Duration", value: payload.distractedDuration)
+                        }
+                    }
+                    .padding(.vertical, 38)
+                    .padding(.horizontal, 42)
+                }
+
+                storyCard {
+                    VStack(spacing: 28) {
+                        Text(payload.summary)
+                            .font(.system(size: 34, weight: .medium))
+                            .foregroundStyle(Color(UIColor.darkGray))
+                            .multilineTextAlignment(.center)
+                            .lineSpacing(8)
+                            .lineLimit(5)
+                            .frame(maxWidth: .infinity)
+
+                        if !payload.snapshots.isEmpty {
+                            HStack(spacing: 18) {
+                                ForEach(Array(payload.snapshots.prefix(3).enumerated()), id: \.offset) { _, image in
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 230, height: 230)
+                                        .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                                                .stroke(.black, lineWidth: 5)
+                                        )
+                                }
+                            }
+                        }
+                    }
+                    .padding(42)
+                }
+
+                Spacer(minLength: 88)
+            }
+            .padding(.horizontal, 70)
+        }
+        .frame(width: 1080, height: 1920)
+        .clipped()
+    }
+
+    private var thumbnail: some View {
+        Group {
+            if let image = payload.thumbnail {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: "person.crop.circle.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(.gray.opacity(0.65))
+                    .padding(45)
+                    .background(.white)
+            }
+        }
+        .frame(width: 250, height: 250)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(.black, lineWidth: 8))
+        .shadow(color: .black.opacity(0.22), radius: 20, y: 10)
+    }
+
+    private func storyCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        PatternBorderedCard(edges: [.top, .bottom], cornerRadius: 56) {
+            content()
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func storyStat(title: String, value: String) -> some View {
+        VStack(spacing: 12) {
+            Text(title)
+                .font(.system(size: 26, weight: .bold))
+                .foregroundStyle(Color(UIColor.gray))
+                .multilineTextAlignment(.center)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+
+            Text(value)
+                .font(.system(size: 64, weight: .black))
+                .foregroundStyle(.black)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -530,8 +728,9 @@ struct SnapshotViewer: View {
                         Image(systemName: "xmark")
                             .font(.system(size: 18, weight: .bold))
                             .foregroundColor(.white)
-                            .padding(12)
+                            .frame(width: 44, height: 44)
                             .background(Circle().fill(Color.black.opacity(0.5)))
+                            .contentShape(Rectangle())
                     }
                     .accessibilityLabel("Close")
                     .accessibilityHint("Returns to session analytics")

@@ -252,7 +252,7 @@ struct WeekGroup: Identifiable {
     let number: Int         // sequential position within its month (1 = earliest)
     let sessions: [Session]
     let totalDuration: TimeInterval
-    let isCurrent: Bool     // contains today — stays expanded
+    let isCurrent: Bool     // contains today — starts expanded
 
     var title: String { "Week \(number)" }
 
@@ -277,9 +277,9 @@ struct WeekCard: View {
         _userExpanded = State(initialValue: week.isCurrent)
     }
 
-    /// The current (not-yet-passed) week is always expanded and can't be collapsed.
+    /// Current week starts expanded, but the user can collapse it.
     private var isExpanded: Bool {
-        week.isCurrent ? true : userExpanded
+        userExpanded
     }
 
     /// The "Week N" pill label.
@@ -318,7 +318,6 @@ struct WeekCard: View {
 
                 // Duration + chevron toggles expand/collapse.
                 Button {
-                    guard !week.isCurrent else { return }
                     withAnimation(.easeInOut(duration: 0.2)) {
                         userExpanded.toggle()
                     }
@@ -336,7 +335,7 @@ struct WeekCard: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(isExpanded ? "Collapse \(week.title)" : "Expand \(week.title)")
                 .accessibilityValue(TimeFormatter.longDuration(week.totalDuration))
-                .accessibilityHint(week.isCurrent ? "Current week is always expanded" : "Shows or hides sessions in this week")
+                .accessibilityHint("Shows or hides sessions in this week")
             }
             .padding(16)
 
@@ -413,10 +412,10 @@ struct SessionRow: View {
         session.title.isEmpty ? "Untitled Session" : session.title
     }
 
-    /// Extracts a poster frame from the saved wrapped video off the main thread.
+    /// Extracts a poster frame from the saved wrapped video, falling back to the
+    /// retained raw clip when the final wrap has not been generated yet.
     private func loadPosterFrame() async {
-        guard posterFrame == nil, let path = session.wrappedVideoPath else { return }
-        let url = URL(fileURLWithPath: path)
+        guard posterFrame == nil, let url = posterSourceURL else { return }
         let frame = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let image = SessionRecordingViewModel.extractPreviewFrames(from: url, count: 1).first
@@ -424,6 +423,20 @@ struct SessionRow: View {
             }
         }
         posterFrame = frame
+    }
+
+    private var posterSourceURL: URL? {
+        existingFileURL(path: session.wrappedVideoPath) ?? existingFileURL(path: session.rawClipPath)
+    }
+
+    private var posterTaskKey: String {
+        "\(session.wrappedVideoPath ?? "")|\(session.rawClipPath ?? "")"
+    }
+
+    private func existingFileURL(path: String?) -> URL? {
+        guard let path, !path.isEmpty else { return nil }
+        let url = URL(fileURLWithPath: path)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     var body: some View {
@@ -456,7 +469,10 @@ struct SessionRow: View {
             }
             .frame(width: 50, height: 50)
             .clipShape(RoundedRectangle(cornerRadius: 12))
-            .task(id: session.id) { await loadPosterFrame() }
+            .task(id: posterTaskKey) {
+                posterFrame = nil
+                await loadPosterFrame()
+            }
 
             // Text content
             VStack(alignment: .leading, spacing: 4) {

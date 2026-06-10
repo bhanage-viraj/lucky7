@@ -183,12 +183,7 @@ struct CrashSessionScreen: View {
 
                 Spacer()
 
-                Button {
-                    guard sessionId != nil else { return }
-                    withAnimation(stepAnimation) {
-                        step = .details
-                    }
-                } label: {
+                Button(action: advanceToDetails) {
                     Text("Tap to go to the next screen")
                         .font(.system(size: 14))
                         .opacity(appeared ? 0.8 : 0)
@@ -200,6 +195,16 @@ struct CrashSessionScreen: View {
                 .accessibilityInputLabels(["continue", "next", "session details"])
             }
             .foregroundStyle(.white)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: advanceToDetails)
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private func advanceToDetails() {
+        guard sessionId != nil, step == .celebration else { return }
+        withAnimation(stepAnimation) {
+            step = .details
         }
     }
 

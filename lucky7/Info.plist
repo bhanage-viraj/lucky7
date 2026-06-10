@@ -5,6 +5,7 @@
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>instagram</string>
+		<string>instagram-stories</string>
 		<string>youtube</string>
 		<string>tiktok</string>
 		<string>twitter</string>

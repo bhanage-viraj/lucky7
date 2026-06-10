@@ -39,18 +39,20 @@ struct SessionDetails: View {
 
     /// Dark navy fill for the SAVE button (matches the design mock-up).
     private let saveButtonColor = Color(red: 30 / 255, green: 58 / 255, blue: 95 / 255)
+    private let disabledSaveButtonColor = Color(red: 155 / 255, green: 164 / 255, blue: 174 / 255)
 
     // filtering only 3 frames for snapshots
     private var displayFrame: [UIImage] {
-        guard !videoFrames.isEmpty else { return [] }
+        let sourceFrames = videoFrames.isEmpty ? sessionRecording.previewFrames : videoFrames
+        guard !sourceFrames.isEmpty else { return [] }
 
-        if videoFrames.count <= 3 {
-            return videoFrames
+        if sourceFrames.count <= 3 {
+            return sourceFrames
         }
 
-        let firstFrame = videoFrames.first!
-        let middleFrame = videoFrames[videoFrames.count / 2]
-        let lastFrame = videoFrames.last!
+        let firstFrame = sourceFrames.first!
+        let middleFrame = sourceFrames[sourceFrames.count / 2]
+        let lastFrame = sourceFrames.last!
 
         return [firstFrame, middleFrame, lastFrame]
     }
@@ -58,6 +60,12 @@ struct SessionDetails: View {
     /// The snapshots field counts as "active" while its picker / camera / dialog is open.
     private var snapshotFieldActive: Bool {
         showImageSourceDialog || showCamera || showLibrary
+    }
+
+    private var canSave: Bool {
+        !sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !sessionDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !uploadedSnapshots.isEmpty
     }
 
     private func addSnapshot(_ image: UIImage) {
@@ -212,7 +220,7 @@ struct SessionDetails: View {
                                             .font(.system(size: 20))
                                             .symbolRenderingMode(.palette)
                                             .foregroundStyle(.white, .black)
-                                            .frame(width: 36, height: 36)   // big enough tap target
+                                            .frame(width: 44, height: 44)
                                             .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
@@ -292,24 +300,31 @@ struct SessionDetails: View {
                 Text(isSaving ? "FINISHING WRAP..." : "SAVE")
                     .font(.custom("Special Gothic Expanded One", size: 16))
             }
-                .foregroundColor(.white.opacity(isSaving ? 0.85 : 1))
+                .foregroundColor(.white.opacity(canSave || isSaving ? 1 : 0.72))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
-                .background(saveButtonColor)
+                .background(saveButtonBackground)
                 .clipShape(RoundedRectangle(cornerRadius: 30))
         }
-        .disabled(isSaving)
+        .disabled(!canSave || isSaving)
         .accessibilityLabel(isSaving ? "Finishing session wrap" : "Save session")
         .accessibilityHint(accessibilitySaveHint)
         .accessibilityInputLabels(["save", "save session", "export"])
         .accessibilityAddTraits(isSaving ? .updatesFrequently : [])
     }
 
+    private var saveButtonBackground: Color {
+        if isSaving {
+            return saveButtonColor
+        }
+        return canSave ? saveButtonColor : disabledSaveButtonColor
+    }
+
     private var accessibilitySaveHint: String {
         if isSaving {
             return "Please wait while Rush Hour generates and saves your wrap"
         }
-        return "Saves your session details and exports the session video"
+        return canSave ? "Saves your session details and exports the session video" : "Add a title, description, or snapshot to save"
     }
 
     private var exportTitle: String {
@@ -334,7 +349,7 @@ struct SessionDetails: View {
     }
 
     private func saveSession() {
-        guard !isSaving else { return }
+        guard canSave, !isSaving else { return }
 
         backgroundWrapTask?.cancel()
         isSaving = true

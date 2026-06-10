@@ -310,11 +310,14 @@ final class SessionRecordingViewModel: ObservableObject {
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: 400, height: 400)
+        generator.requestedTimeToleranceBefore = .positiveInfinity
+        generator.requestedTimeToleranceAfter = .positiveInfinity
 
-        let totalSeconds = max(CMTimeGetSeconds(asset.duration), 0.1)
+        let durationSeconds = CMTimeGetSeconds(asset.duration)
+        let totalSeconds = durationSeconds.isFinite && durationSeconds > 0 ? durationSeconds : 1
         var images: [UIImage] = []
         let primaryTimes = previewFrameTimes(totalSeconds: totalSeconds, count: count)
-        let fallbackTimes = [0.0, totalSeconds * 0.25, totalSeconds * 0.5, totalSeconds * 0.75, totalSeconds * 0.95]
+        let fallbackTimes = previewFrameFallbackTimes(totalSeconds: totalSeconds)
         var attemptedTimes: [Double] = []
 
         for seconds in primaryTimes + fallbackTimes {
@@ -329,7 +332,14 @@ final class SessionRecordingViewModel: ObservableObject {
             }
         }
 
-        return images
+        guard !images.isEmpty else { return [] }
+
+        let extractedCount = images.count
+        while images.count < count {
+            images.append(images[images.count % extractedCount])
+        }
+
+        return Array(images.prefix(count))
     }
 
     private static func previewFrameTimes(totalSeconds: Double, count: Int) -> [Double] {
@@ -341,6 +351,21 @@ final class SessionRecordingViewModel: ObservableObject {
         let middle = Double.random(in: (totalSeconds * 0.33)...(totalSeconds * 0.66))
         let late = Double.random(in: (totalSeconds * 0.70)...(totalSeconds * 0.95))
         return [0, middle, late]
+    }
+
+    private static func previewFrameFallbackTimes(totalSeconds: Double) -> [Double] {
+        let safeStart = min(max(totalSeconds * 0.02, 0.03), max(totalSeconds * 0.25, 0.03))
+        return [
+            0,
+            safeStart,
+            totalSeconds * 0.10,
+            totalSeconds * 0.25,
+            totalSeconds * 0.40,
+            totalSeconds * 0.55,
+            totalSeconds * 0.70,
+            totalSeconds * 0.85,
+            totalSeconds * 0.95
+        ]
     }
 
     private func makeOverlay(durationSeconds: TimeInterval, title: String = "Untitled session") -> ExportEngine.WrappedVideoOverlay {
@@ -516,6 +541,9 @@ final class SessionRecordingViewModel: ObservableObject {
                 self.statusMessage = nil
                 if let finalURL {
                     self.finalVideoURL = finalURL
+                    if self.previewFrames.isEmpty {
+                        self.previewFrames = Self.extractPreviewFrames(from: finalURL, count: 3)
+                    }
                     self.completedTitleExportTitle = finishedTitle
                     self.completedTitleExportSavedToPhotos = false
                     if shouldSaveToPhotos {

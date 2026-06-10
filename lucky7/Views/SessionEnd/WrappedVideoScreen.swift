@@ -6,6 +6,8 @@
 import SwiftUI
 import SwiftData
 import AVKit
+import UniformTypeIdentifiers
+import UIKit
 
 struct WrappedVideoScreen: View {
     let kind: Kind
@@ -19,7 +21,7 @@ struct WrappedVideoScreen: View {
     @Query private var periodWraps: [PeriodWrap]
     @State private var player: AVPlayer?
     @State private var isPlaying = true
-    @State private var didFinish = false
+    @State private var sharePayload: VideoSharePayload?
 
     init(kind: Kind, videoFrames: [UIImage] = []) {
         self.kind = kind
@@ -48,13 +50,7 @@ struct WrappedVideoScreen: View {
     private var periodWrap: PeriodWrap? { periodWraps.first }
 
     private var isWrapReady: Bool {
-        switch kind {
-        case .session:
-            // Hold off while the title re-export is still running so we never surface
-            // the earlier "Untitled session" file — wait for the final one.
-            return !sessionRecording.isExporting && videoURL != nil
-        case .weekly, .monthly: return videoURL != nil
-        }
+        videoURL != nil
     }
 
     private var displayTitle: String {
@@ -95,14 +91,13 @@ struct WrappedVideoScreen: View {
     private var videoURL: URL? {
         switch kind {
         case .session:
-            // During the post-session flow the live VM URL flips to the titled re-export
-            // the instant it's ready, so prefer it — that's what lets us skip the untitled
-            // file entirely. Falls back to the saved path when opened from History.
-            if let url = sessionRecording.finalVideoURL { return url }
-            if let path = session?.wrappedVideoPath { return URL(fileURLWithPath: path) }
+            // The saved session path is authoritative. Avoid falling back to the
+            // global live export URL here; from History that can point at a
+            // different, more recent session and share/play the wrong wrap.
+            if let url = existingFileURL(path: session?.wrappedVideoPath) { return url }
             return nil
         case .weekly, .monthly:
-            if let path = periodWrap?.videoPath { return URL(fileURLWithPath: path) }
+            if let url = existingFileURL(path: periodWrap?.videoPath) { return url }
             return nil
         }
     }
@@ -147,9 +142,8 @@ struct WrappedVideoScreen: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .hidesFloatingTabBar()
-        // Build the player only once the wrap is ready (titled re-export finished), and
-        // rebuild if the final URL changes — so the screen lands straight on the titled
-        // file with no "Untitled session" flash.
+        // Build the player as soon as a real video file URL exists, and rebuild if
+        // the persisted path/live URL changes.
         .onAppear { syncPlayer() }
         .onChange(of: videoURL) { _, _ in syncPlayer() }
         .onChange(of: isWrapReady) { _, _ in syncPlayer() }
@@ -159,22 +153,41 @@ struct WrappedVideoScreen: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: AVPlayerItem.didPlayToEndTimeNotification)) { note in
             guard let item = note.object as? AVPlayerItem, item === player?.currentItem else { return }
-            isPlaying = false
-            didFinish = true
+            player?.seek(to: .zero)
+            player?.play()
+            isPlaying = true
+        }
+        .sheet(item: $sharePayload) { payload in
+            VideoShareSheet(payload: payload)
         }
     }
 
     // MARK: - Player
 
-    /// Builds (or rebuilds) the player once the wrap is ready, pointing at the final file.
+    private func existingFileURL(path: String?) -> URL? {
+        guard let path, !path.isEmpty else { return nil }
+        return existingFileURL(URL(fileURLWithPath: path))
+    }
+
+    private func existingFileURL(_ url: URL?) -> URL? {
+        guard let url, FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return url
+    }
+
+    /// Builds (or rebuilds) the player once a wrap file exists.
     /// No-ops while we're still waiting, or if we're already playing this exact URL.
     private func syncPlayer() {
-        guard isWrapReady, let url = videoURL else { return }
+        guard let url = videoURL else {
+            player?.pause()
+            player = nil
+            isPlaying = false
+            return
+        }
         if (player?.currentItem?.asset as? AVURLAsset)?.url == url { return }
         player = AVPlayer(url: url)
+        player?.actionAtItemEnd = .none
         player?.play()
         isPlaying = true
-        didFinish = false
     }
 
     // MARK: - Subviews
@@ -196,25 +209,29 @@ struct WrappedVideoScreen: View {
         .padding(.horizontal, 20)
     }
 
-    @ViewBuilder
     private var shareButton: some View {
-        if let videoURL = shareableVideoURL {
-            ShareLink(item: videoURL, preview: SharePreview(displayTitle)) {
-                shareIcon
-            }
-        } else {
-            ShareLink(item: shareableText, preview: SharePreview(displayTitle)) {
-                shareIcon
-            }
+        Button {
+            guard let videoURL = shareableVideoURL else { return }
+            shareVideo(videoURL)
+        } label: {
+            shareIcon
         }
+        .buttonStyle(.plain)
+        .disabled(shareableVideoURL == nil)
     }
 
     private var shareIcon: some View {
         Image(systemName: "square.and.arrow.up")
             .font(.system(size: 20, weight: .semibold))
             .foregroundColor(.white)
+            .opacity(shareableVideoURL == nil ? 0.45 : 1)
             .accessibilityLabel("Share video")
+            .accessibilityHint(shareableVideoURL == nil ? "Video is still finishing" : "Opens sharing options for this wrap video")
             .accessibilityInputLabels(["share", "share video", "export"])
+    }
+
+    private func shareVideo(_ url: URL) {
+        sharePayload = VideoSharePayload(url: url, title: displayTitle)
     }
 
     private var mediaCard: some View {
@@ -282,7 +299,7 @@ struct WrappedVideoScreen: View {
 
     private var playPauseButton: some View {
         Button(action: togglePlayback) {
-            Image(systemName: didFinish ? "arrow.counterclockwise" : (isPlaying ? "pause.fill" : "play.fill"))
+            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                 .font(.system(size: 24, weight: .black))
                 .foregroundColor(.white)
                 .frame(width: 64, height: 64)
@@ -290,8 +307,8 @@ struct WrappedVideoScreen: View {
         }
         .disabled(!isWrapReady)
         .opacity(isWrapReady ? 1 : 0.5)
-        .accessibilityLabel(didFinish ? "Restart video" : (isPlaying ? "Pause video" : "Play video"))
-        .accessibilityInputLabels(didFinish ? ["restart", "replay"] : (isPlaying ? ["pause"] : ["play", "play video"]))
+        .accessibilityLabel(isPlaying ? "Pause video" : "Resume video")
+        .accessibilityInputLabels(isPlaying ? ["pause"] : ["resume", "play", "play video"])
     }
 }
 
@@ -306,14 +323,6 @@ extension WrappedVideoScreen {
 
     private func togglePlayback() {
         guard let player else { return }
-        // Finished → restart from the beginning.
-        if didFinish {
-            player.seek(to: .zero)
-            player.play()
-            isPlaying = true
-            didFinish = false
-            return
-        }
         if isPlaying {
             player.pause()
         } else {
@@ -343,6 +352,8 @@ struct WrapNotReadyModal: View {
                         Image(systemName: "xmark")
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(Color.black.opacity(0.55))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Close")
@@ -381,6 +392,225 @@ struct WrapNotReadyModal: View {
             .shadow(color: .black.opacity(0.2), radius: 20, y: 8)
             .accessibilityAddTraits(.isModal)
         }
+    }
+}
+
+struct VideoSharePayload: Identifiable {
+    let id = UUID()
+    let url: URL
+    let title: String
+}
+
+struct ImageSharePayload: Identifiable {
+    let id = UUID()
+    let image: UIImage
+    let title: String
+}
+
+struct VideoShareSheet: UIViewControllerRepresentable {
+    let payload: VideoSharePayload
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let item = VideoShareItemSource(payload: payload)
+        let controller = UIActivityViewController(
+            activityItems: [item],
+            applicationActivities: [InstagramStoryActivity()]
+        )
+        controller.excludedActivityTypes = [.addToReadingList, .assignToContact, .markupAsPDF, .print]
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+struct ImageShareSheet: UIViewControllerRepresentable {
+    let payload: ImageSharePayload
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let item = ImageShareItemSource(payload: payload)
+        let controller = UIActivityViewController(
+            activityItems: [item],
+            applicationActivities: [InstagramStoryActivity()]
+        )
+        controller.excludedActivityTypes = [.addToReadingList, .assignToContact, .markupAsPDF, .print]
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+private final class VideoShareItemSource: NSObject, UIActivityItemSource {
+    let payload: VideoSharePayload
+
+    init(payload: VideoSharePayload) {
+        self.payload = payload
+    }
+
+    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any {
+        payload.url
+    }
+
+    func activityViewController(
+        _ activityViewController: UIActivityViewController,
+        itemForActivityType activityType: UIActivity.ActivityType?
+    ) -> Any? {
+        payload.url
+    }
+
+    func activityViewController(
+        _ activityViewController: UIActivityViewController,
+        subjectForActivityType activityType: UIActivity.ActivityType?
+    ) -> String {
+        payload.title
+    }
+
+    func activityViewController(
+        _ activityViewController: UIActivityViewController,
+        dataTypeIdentifierForActivityType activityType: UIActivity.ActivityType?
+    ) -> String {
+        UTType.mpeg4Movie.identifier
+    }
+}
+
+private final class ImageShareItemSource: NSObject, UIActivityItemSource {
+    let payload: ImageSharePayload
+
+    init(payload: ImageSharePayload) {
+        self.payload = payload
+    }
+
+    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any {
+        payload.image
+    }
+
+    func activityViewController(
+        _ activityViewController: UIActivityViewController,
+        itemForActivityType activityType: UIActivity.ActivityType?
+    ) -> Any? {
+        payload.image
+    }
+
+    func activityViewController(
+        _ activityViewController: UIActivityViewController,
+        subjectForActivityType activityType: UIActivity.ActivityType?
+    ) -> String {
+        payload.title
+    }
+
+    func activityViewController(
+        _ activityViewController: UIActivityViewController,
+        dataTypeIdentifierForActivityType activityType: UIActivity.ActivityType?
+    ) -> String {
+        UTType.png.identifier
+    }
+}
+
+@MainActor
+private final class InstagramStoryActivity: UIActivity {
+    private var item: Any?
+
+    override class var activityCategory: UIActivity.Category {
+        .share
+    }
+
+    override var activityType: UIActivity.ActivityType? {
+        UIActivity.ActivityType("com.andrianangg.lucky7.instagramStory")
+    }
+
+    override var activityTitle: String? {
+        "Instagram Story"
+    }
+
+    override var activityImage: UIImage? {
+        UIImage(systemName: "camera.fill")
+    }
+
+    override func canPerform(withActivityItems activityItems: [Any]) -> Bool {
+        guard InstagramStorySharer.canOpenStories else { return false }
+        return activityItems.contains { shareableItem(from: $0) != nil }
+    }
+
+    override func prepare(withActivityItems activityItems: [Any]) {
+        item = activityItems.compactMap { shareableItem(from: $0) }.first
+    }
+
+    override func perform() {
+        let didShare: Bool
+        if let image = item as? UIImage {
+            didShare = InstagramStorySharer.shareImage(image)
+        } else if let url = item as? URL {
+            didShare = InstagramStorySharer.shareVideo(url: url)
+        } else {
+            didShare = false
+        }
+
+        activityDidFinish(didShare)
+    }
+
+    private func shareableItem(from item: Any) -> Any? {
+        if let image = item as? UIImage {
+            return image.pngData() == nil ? nil : image
+        }
+
+        if let url = item as? URL {
+            return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        }
+
+        if let source = item as? VideoShareItemSource {
+            return FileManager.default.fileExists(atPath: source.payload.url.path) ? source.payload.url : nil
+        }
+
+        if let source = item as? ImageShareItemSource {
+            return source.payload.image.pngData() == nil ? nil : source.payload.image
+        }
+
+        return nil
+    }
+}
+
+@MainActor
+enum InstagramStorySharer {
+    static var canOpenStories: Bool {
+        guard let storiesURL = URL(string: "instagram-stories://share") else { return false }
+        return UIApplication.shared.canOpenURL(storiesURL)
+    }
+
+    static func shareVideo(url: URL) -> Bool {
+        guard let videoData = try? Data(contentsOf: url) else {
+            return false
+        }
+
+        return openStories(with: [
+            "com.instagram.sharedSticker.backgroundVideo": videoData,
+            "com.instagram.sharedSticker.backgroundTopColor": "#3A8DFF",
+            "com.instagram.sharedSticker.backgroundBottomColor": "#3A8DFF"
+        ])
+    }
+
+    static func shareImage(_ image: UIImage) -> Bool {
+        guard let imageData = image.pngData() else {
+            return false
+        }
+
+        return openStories(with: [
+            "com.instagram.sharedSticker.backgroundImage": imageData,
+            "com.instagram.sharedSticker.backgroundTopColor": "#3A8DFF",
+            "com.instagram.sharedSticker.backgroundBottomColor": "#3A8DFF"
+        ])
+    }
+
+    private static func openStories(with item: [String: Any]) -> Bool {
+        guard let storiesURL = URL(string: "instagram-stories://share"),
+              canOpenStories else {
+            return false
+        }
+
+        UIPasteboard.general.setItems(
+            [item],
+            options: [.expirationDate: Date().addingTimeInterval(5 * 60)]
+        )
+        UIApplication.shared.open(storiesURL)
+        return true
     }
 }
 
