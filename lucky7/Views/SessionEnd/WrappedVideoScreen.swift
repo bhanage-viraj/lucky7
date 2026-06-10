@@ -49,24 +49,11 @@ struct WrappedVideoScreen: View {
 
     private var isWrapReady: Bool {
         switch kind {
-        case .session: return true
-        case .weekly, .monthly: return videoURL != nil
-        }
-    }
-
-    /// Non-nil when a weekly/monthly wrap can't be shown yet — drives the warning modal.
-    private var notReadyMessage: String? {
-        switch kind {
         case .session:
-            return nil
-        case .weekly(_, let end, _, _, _):
-            if Date() < end { return "Your weekly rewind will be ready once this week ends." }
-            if periodWrap == nil { return "Your weekly rewind is still being put together — check back soon." }
-            return nil
-        case .monthly(_, let end, _, _, _):
-            if Date() < end { return "Your monthly rewind will be ready once this month ends." }
-            if periodWrap == nil { return "Your monthly rewind is still being put together — check back soon." }
-            return nil
+            // Hold off while the title re-export is still running so we never surface
+            // the earlier "Untitled session" file — wait for the final one.
+            return !sessionRecording.isExporting && videoURL != nil
+        case .weekly, .monthly: return videoURL != nil
         }
     }
 
@@ -81,11 +68,7 @@ struct WrappedVideoScreen: View {
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {
-        let total = max(Int(seconds), 0)
-        let h = total / 3600
-        let m = (total % 3600) / 60
-        if h > 0 { return "\(h)h \(m)m" }
-        return "\(m)m"
+        TimeFormatter.shortDuration(seconds)
     }
 
     private var durationText: String {
@@ -112,8 +95,12 @@ struct WrappedVideoScreen: View {
     private var videoURL: URL? {
         switch kind {
         case .session:
+            // During the post-session flow the live VM URL flips to the titled re-export
+            // the instant it's ready, so prefer it — that's what lets us skip the untitled
+            // file entirely. Falls back to the saved path when opened from History.
+            if let url = sessionRecording.finalVideoURL { return url }
             if let path = session?.wrappedVideoPath { return URL(fileURLWithPath: path) }
-            return sessionRecording.finalVideoURL
+            return nil
         case .weekly, .monthly:
             if let path = periodWrap?.videoPath { return URL(fileURLWithPath: path) }
             return nil
@@ -160,32 +147,12 @@ struct WrappedVideoScreen: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .hidesFloatingTabBar()
-        .overlay {
-            if let message = notReadyMessage {
-                WrapNotReadyModal(
-                    title: "Not ready yet",
-                    message: message,
-                    onDismiss: { dismiss() }
-                )
-            }
-        }
-        .onAppear {
-            if let videoURL {
-                player = AVPlayer(url: videoURL)
-                player?.play()
-            }
-        }
-        // The session wrap is re-exported with the title a moment after saving (and
-        // weekly/monthly wraps finish rendering asynchronously). When the final file
-        // lands, `wrappedVideoPath` updates → swap the player to it so we stop showing
-        // the earlier "Untitled session" export.
-        .onChange(of: videoURL) { _, newURL in
-            guard let newURL, newURL != (player?.currentItem?.asset as? AVURLAsset)?.url else { return }
-            player = AVPlayer(url: newURL)
-            player?.play()
-            isPlaying = true
-            didFinish = false
-        }
+        // Build the player only once the wrap is ready (titled re-export finished), and
+        // rebuild if the final URL changes — so the screen lands straight on the titled
+        // file with no "Untitled session" flash.
+        .onAppear { syncPlayer() }
+        .onChange(of: videoURL) { _, _ in syncPlayer() }
+        .onChange(of: isWrapReady) { _, _ in syncPlayer() }
         .onDisappear {
             player?.pause()
             player = nil
@@ -195,6 +162,19 @@ struct WrappedVideoScreen: View {
             isPlaying = false
             didFinish = true
         }
+    }
+
+    // MARK: - Player
+
+    /// Builds (or rebuilds) the player once the wrap is ready, pointing at the final file.
+    /// No-ops while we're still waiting, or if we're already playing this exact URL.
+    private func syncPlayer() {
+        guard isWrapReady, let url = videoURL else { return }
+        if (player?.currentItem?.asset as? AVURLAsset)?.url == url { return }
+        player = AVPlayer(url: url)
+        player?.play()
+        isPlaying = true
+        didFinish = false
     }
 
     // MARK: - Subviews
@@ -259,6 +239,23 @@ struct WrappedVideoScreen: View {
                                     .foregroundColor(.white.opacity(0.5))
                                     .padding(50)
                             )
+                    }
+                }
+            }
+            .overlay {
+                // While the titled wrap is still rendering, keep a spinner over the poster
+                // frame instead of playing the not-yet-final video.
+                if case .session = kind, !isWrapReady {
+                    ZStack {
+                        Color.black.opacity(0.4)
+                        VStack(spacing: 12) {
+                            ProgressView()
+                                .tint(.white)
+                                .scaleEffect(1.3)
+                            Text("Finishing your wrap…")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
                     }
                 }
             }
@@ -328,23 +325,18 @@ extension WrappedVideoScreen {
 
 // MARK: - "Not ready yet" warning (EndSession-style bottom sheet)
 
-private struct WrapNotReadyModal: View {
+struct WrapNotReadyModal: View {
     let title: String
     let message: String
     let onDismiss: () -> Void
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack {
             Color.black.opacity(0.4)
                 .ignoresSafeArea()
                 .onTapGesture(perform: onDismiss)
 
             VStack(spacing: 0) {
-                Capsule()
-                    .fill(Color.black.opacity(0.18))
-                    .frame(width: 38, height: 5)
-                    .padding(.top, 10)
-
                 HStack {
                     Spacer()
                     Button(action: onDismiss) {
@@ -356,7 +348,7 @@ private struct WrapNotReadyModal: View {
                     .accessibilityLabel("Close")
                 }
                 .padding(.horizontal, 18)
-                .padding(.top, 6)
+                .padding(.top, 14)
 
                 Text(title)
                     .font(.system(size: 22, weight: .bold))
@@ -385,8 +377,7 @@ private struct WrapNotReadyModal: View {
                 .accessibilityLabel("Got it")
             }
             .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .padding(.horizontal, 20)
-            .padding(.bottom, 28)
+            .padding(.horizontal, 28)
             .shadow(color: .black.opacity(0.2), radius: 20, y: 8)
             .accessibilityAddTraits(.isModal)
         }

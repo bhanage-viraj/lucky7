@@ -11,6 +11,8 @@ struct MonitorScreen: View {
     @Query(sort: \Session.startTime, order: .reverse) private var sessions: [Session]
     @Query private var periodWraps: [PeriodWrap]
     @State private var showSearch = false
+    @State private var showSettings = false
+    @State private var weeklyNotReady = false
 
     /// Sessions grouped by calendar month (newest first), each month split into real
     /// 7-day weeks. A week that straddles a month boundary is kept whole and filed
@@ -88,6 +90,15 @@ struct MonitorScreen: View {
                     }
                 }
             }
+            .overlay {
+                if weeklyNotReady {
+                    WrapNotReadyModal(
+                        title: "Not ready yet",
+                        message: "Your weekly analytics isn't ready yet. Please wait until the end of the week.",
+                        onDismiss: { weeklyNotReady = false }
+                    )
+                }
+            }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(isPresented: $showSearch) {
                 SessionSearchView()
@@ -97,18 +108,24 @@ struct MonitorScreen: View {
             // Keep recaps fresh when viewing history (no-op when nothing's due).
             await WrapRollupService.rollUpIfNeeded(context: modelContext)
         }
+        .fullScreenCover(isPresented: $showSettings) {
+            SettingsScreen()
+        }
     }
 
     // MARK: - Header
 
     private var header: some View {
         HStack {
-            Button(action: {}) {
+            Button {
+                showSettings = true
+            } label: {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 19))
                     .foregroundColor(.white)
             }
-            .accessibilityHidden(true)
+            .accessibilityLabel("Settings")
+            .accessibilityHint("Opens app settings")
 
             Spacer()
 
@@ -167,7 +184,7 @@ struct MonitorScreen: View {
                     }
 
                     ForEach(month.weeks) { week in
-                        WeekCard(week: week)
+                        WeekCard(week: week, onBlocked: { weeklyNotReady = true })
                     }
                 }
             }
@@ -249,10 +266,13 @@ struct WeekGroup: Identifiable {
 
 struct WeekCard: View {
     let week: WeekGroup
+    /// Called instead of navigating when the week hasn't ended yet.
+    var onBlocked: () -> Void = {}
     @State private var userExpanded: Bool
 
-    init(week: WeekGroup) {
+    init(week: WeekGroup, onBlocked: @escaping () -> Void = {}) {
         self.week = week
+        self.onBlocked = onBlocked
         // Current week starts expanded; past weeks start collapsed.
         _userExpanded = State(initialValue: week.isCurrent)
     }
@@ -262,28 +282,37 @@ struct WeekCard: View {
         week.isCurrent ? true : userExpanded
     }
 
+    /// The "Week N" pill label.
+    private var weekPill: some View {
+        HStack(spacing: 6) {
+            Text(week.title)
+                .font(.system(size: 14, weight: .heavy))
+            Image(systemName: "chart.bar.xaxis")
+                .font(.system(size: 12, weight: .bold))
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(Capsule().fill(Color.black))
+        .accessibilityLabel("\(week.title) analytics")
+        .accessibilityHint("Opens weekly focus statistics")
+        .accessibilityInputLabels(["week \(week.number)", "analytics", "week analytics"])
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                // The "Week N" pill opens the weekly analytics.
-                NavigationLink {
-                    WeeklyAnalyticScreen(weekStart: week.id)
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(week.title)
-                            .font(.system(size: 14, weight: .heavy))
-                        Image(systemName: "chart.bar.xaxis")
-                            .font(.system(size: 12, weight: .bold))
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(Capsule().fill(Color.black))
+                // The "Week N" pill opens the weekly analytics — but only once the week has
+                // ended. During the in-progress week it shows a "not ready" popup instead.
+                if week.isCurrent {
+                    Button(action: onBlocked) { weekPill }
+                        .buttonStyle(.plain)
+                } else {
+                    NavigationLink {
+                        WeeklyAnalyticScreen(weekStart: week.id)
+                    } label: { weekPill }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(week.title) analytics")
-                .accessibilityHint("Opens weekly focus statistics")
-                .accessibilityInputLabels(["week \(week.number)", "analytics", "week analytics"])
 
                 Spacer()
 

@@ -19,6 +19,9 @@ final class SessionRecordingViewModel: ObservableObject {
     @Published var cameraReady = false
     @Published var permissionDenied = false
     @Published var savedToPhotos = false
+    /// Photos-library local id for the saved wrap, persisted on the Session so deleting
+    /// the session can also remove the copy from the user's library.
+    @Published var photoAssetId: String?
     @Published var lastError: String?
     @Published var statusMessage: String?
 
@@ -75,6 +78,7 @@ final class SessionRecordingViewModel: ObservableObject {
         previewFrames = []
         lastError = nil
         savedToPhotos = false
+        photoAssetId = nil
         statusMessage = "Recording…"
         self.plannedSessionSeconds = max(plannedSessionSeconds, 60)
         recordedWallClockSeconds = 0
@@ -221,6 +225,7 @@ final class SessionRecordingViewModel: ObservableObject {
         previewFrames = []
         lastError = nil
         savedToPhotos = false
+        photoAssetId = nil
         statusMessage = nil
         plannedSessionSeconds = 0
         recordedWallClockSeconds = 0
@@ -240,7 +245,7 @@ final class SessionRecordingViewModel: ObservableObject {
 
     private func saveToPhotosIfPossible(videoURL: URL) async {
         do {
-            try await PhotoLibrarySaver.saveVideo(at: videoURL)
+            photoAssetId = try await PhotoLibrarySaver.saveVideo(at: videoURL)
             savedToPhotos = true
             statusMessage = "Saved to Photos"
             AccessibilitySupport.announce("Saved to Photos")

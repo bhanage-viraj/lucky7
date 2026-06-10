@@ -59,13 +59,8 @@ struct SessionAnalytics: View {
         return s.isEmpty ? "No description added for this session yet." : s
     }
 
-    // TODO: move into Utilities/TimeFormatter.swift once that file is filled
     private func formatDuration(_ seconds: TimeInterval) -> String {
-        let total = max(Int(seconds), 0)
-        let h = total / 3600
-        let m = (total % 3600) / 60
-        if h > 0 { return "\(h)h \(m)m" }
-        return "\(m)m"
+        TimeFormatter.shortDuration(seconds)
     }
 
     private var wholeSessionText: String {
@@ -83,7 +78,7 @@ struct SessionAnalytics: View {
     }
 
     private var distractionCountText: String {
-        "\(distractionStat.distractionCount)x"
+        distractionStat.distractionCount == 0 ? "-" : "\(distractionStat.distractionCount)x"
     }
 
     private var shareableVideoURL: URL? {
@@ -269,42 +264,43 @@ struct SessionAnalytics: View {
                     .padding(.horizontal, 10)
 
                 if savedSnapshots.isEmpty {
+                    // No photos → keep this compact so the card doesn't reserve empty space.
                     Text("No activity snapshots added for this session.")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.gray)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 32)
-                        .padding(.top, 10)
+                        .padding(.top, 8)
                 } else {
-                    HStack(spacing: 12) {
-                        // Show up to 3 saved snapshots. Slots past the count keep
-                        // a neutral placeholder so the row's rhythm stays stable
-                        // when there are only 1–2 photos.
-                        ForEach(0..<3, id: \.self) { index in
-                            Group {
-                                if index < savedSnapshots.count {
-                                    Image(uiImage: savedSnapshots[index])
-                                        .resizable()
-                                        .scaledToFill()
-                                } else {
-                                    Color.gray.opacity(0.2)
-                                }
+                    // Show only the photos that exist — each keeps its third-of-the-row
+                    // size, left-aligned, with no grey placeholder filling empty slots.
+                    GeometryReader { geo in
+                        let tile = (geo.size.width - 24) / 3   // two 12pt gaps → same size as a full 3-up row
+                        HStack(spacing: 12) {
+                            ForEach(Array(savedSnapshots.enumerated()), id: \.offset) { index, image in
+                                // A fixed-size clear box owns the layout, so a landscape photo
+                                // can never stretch the row — the image just fills it and crops.
+                                Color.clear
+                                    .frame(width: tile, height: 140)
+                                    .overlay {
+                                        Image(uiImage: image)
+                                            .resizable()
+                                            .scaledToFill()
+                                    }
+                                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.black, lineWidth: 2))
+                                    .contentShape(RoundedRectangle(cornerRadius: 16))
+                                    .accessibilityLabel("Activity snapshot \(index + 1)")
+                                    .accessibilityHint("Opens snapshot full screen")
+                                    .accessibilityAddTraits(.isButton)
+                                    .onTapGesture {
+                                        fullscreenSnapshot = FullscreenSnapshot(id: index)
+                                    }
                             }
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 140)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.black, lineWidth: 2))
-                            .contentShape(RoundedRectangle(cornerRadius: 16))
-                            .accessibilityLabel("Activity snapshot \(index + 1)")
-                            .accessibilityHint("Opens snapshot full screen")
-                            .accessibilityAddTraits(.isButton)
-                            .onTapGesture {
-                                guard index < savedSnapshots.count else { return }
-                                fullscreenSnapshot = FullscreenSnapshot(id: index)
-                            }
+                            Spacer(minLength: 0)
                         }
                     }
+                    .frame(height: 140)
                     .padding(.top, 10)
                 }
             }
@@ -431,10 +427,23 @@ struct SessionAnalytics: View {
 
     private func deleteSession() {
         if let session = session {
+            // Free the video files this session left in app storage.
+            removeFile(session.wrappedVideoPath)
+            removeFile(session.rawClipPath)
+            // Remove the copy saved to the user's Photos library (iOS shows its own
+            // confirmation). Older sessions saved before this won't have an id.
+            if let assetId = session.photoAssetId {
+                PhotoLibrarySaver.deleteAsset(withLocalId: assetId)
+            }
             context.delete(session)
             try? context.save()
         }
         close()
+    }
+
+    private func removeFile(_ path: String?) {
+        guard let path else { return }
+        try? FileManager.default.removeItem(atPath: path)
     }
 
     /// Extracts a poster frame from the saved wrapped video when no live capture

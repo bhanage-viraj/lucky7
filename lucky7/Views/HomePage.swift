@@ -519,9 +519,9 @@ private struct HomeTrafficTimer: View {
                 .accessibilityDecorative()
 
             HStack(spacing: shellSpacing) {
-                dial($hours, range: 0...23, shellSlotWidth: shellSlotWidth, shellHeight: shellGroupHeight)
-                dial($minutes, range: 0...59, shellSlotWidth: shellSlotWidth, shellHeight: shellGroupHeight)
-                dial($seconds, range: 0...59, shellSlotWidth: shellSlotWidth, shellHeight: shellGroupHeight)
+                dial($hours, range: 0...23, unit: .hour, shellSlotWidth: shellSlotWidth, shellHeight: shellGroupHeight)
+                dial($minutes, range: 0...59, unit: .minute, shellSlotWidth: shellSlotWidth, shellHeight: shellGroupHeight)
+                dial($seconds, range: 0...59, unit: .second, shellSlotWidth: shellSlotWidth, shellHeight: shellGroupHeight)
             }
             .frame(width: shellGroupWidth, height: shellGroupHeight)
             .padding(.top, shellTop)
@@ -532,6 +532,7 @@ private struct HomeTrafficTimer: View {
     private func dial(
         _ value: Binding<Int>,
         range: ClosedRange<Int>,
+        unit: AccessibilitySupport.TimeUnit,
         shellSlotWidth: CGFloat,
         shellHeight: CGFloat
     ) -> some View {
@@ -562,7 +563,7 @@ private struct HomeTrafficTimer: View {
                 .offset(y: lensTop)
                 .allowsHitTesting(false)
 
-            HomeTimeDial(selected: value, range: range, diameter: lensDiameter)
+            HomeTimeDial(selected: value, range: range, diameter: lensDiameter, unit: unit)
                 .frame(width: lensDiameter, height: lensDiameter)
                 .clipShape(Circle())
                 .offset(y: wheelTop)

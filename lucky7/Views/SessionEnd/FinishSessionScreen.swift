@@ -73,6 +73,19 @@ struct FinishSessionScreen: View {
         .onChange(of: sessionRecording.rawClipURL) { _, url in
             persistRawClipPath(url)
         }
+        .onChange(of: sessionRecording.photoAssetId) { _, id in
+            persistPhotoAssetId(id)
+        }
+    }
+
+    private func persistPhotoAssetId(_ id: String?) {
+        guard let sessionId, let id else { return }
+        var descriptor = FetchDescriptor<Session>(predicate: #Predicate { $0.id == sessionId })
+        descriptor.fetchLimit = 1
+        if let session = try? context.fetch(descriptor).first {
+            session.photoAssetId = id
+            try? context.save()
+        }
     }
 
     private func persistWrappedVideoPath(_ url: URL?) {
