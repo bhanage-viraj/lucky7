@@ -21,36 +21,52 @@ struct SessionSearchView: View {
         return sessions.filter { $0.matchesSearch(trimmedQuery) }
     }
 
-    var body: some View {
-        ZStack {
-            Color("CanvasBlue")
-                .ignoresSafeArea()
+    /// Real top safe-area inset. `proxy.safeAreaInsets` reads 0 inside the full-screen
+    /// `.ignoresSafeArea()` canvas below, so read it from the key window instead — this is
+    /// what keeps the bar clear of the status bar / Dynamic Island.
+    private var safeTopInset: CGFloat {
+        (UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first(where: { $0.isKeyWindow })?
+            .safeAreaInsets.top) ?? 47
+    }
 
-            GeometryReader { geo in
+    var body: some View {
+        // A full-screen GeometryReader with a FIXED frame is the reliable way to stop the
+        // keyboard from shoving the search bar off the top: the canvas is locked to the whole
+        // screen (it ignores ALL safe areas, keyboard included), so focusing the field can't
+        // resize or offset the content. The top safe-area inset is re-added by hand so the bar
+        // still sits below the status bar; results just scroll under the keyboard.
+        GeometryReader { proxy in
+            ZStack(alignment: .top) {
+                Color("CanvasBlue")
+
                 Image("PatternBackground")
                     .resizable()
                     .scaledToFill()
-                    .frame(width: geo.size.width, height: geo.size.height)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
                     .clipped()
-            }
-            .ignoresSafeArea()
 
-            // Tapping any empty area dismisses the keyboard.
-            Color.clear
-                .contentShape(Rectangle())
-                .ignoresSafeArea()
-                .onTapGesture { searchFocused = false }
+                // Tapping any empty area dismisses the keyboard.
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { searchFocused = false }
 
-            VStack(spacing: 0) {
-                searchBar
+                VStack(spacing: 0) {
+                    searchBar
 
-                if results.isEmpty {
-                    noResults
-                } else {
-                    feed
+                    if results.isEmpty {
+                        noResults
+                    } else {
+                        feed
+                    }
                 }
+                .padding(.top, safeTopInset)
             }
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
+        .ignoresSafeArea()
         .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             // Small delay so the field is in the hierarchy (after the push) before focusing.
@@ -69,9 +85,10 @@ struct SessionSearchView: View {
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(.black)
 
-                TextField("Search by title or date", text: $searchText)
+                TextField("", text: $searchText)
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(.black)
+                    .fixedPlaceholder("Search by title or date", isEmpty: searchText.isEmpty, font: .system(size: 16, weight: .medium))
                     .focused($searchFocused)
                     .autocorrectionDisabled()
                     .submitLabel(.search)
@@ -103,6 +120,8 @@ struct SessionSearchView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.white)
+                    .frame(width: 44, height: 44)        // bigger tap target, same glyph size
+                    .contentShape(Rectangle())
             }
             .accessibilityLabel("Close search")
             .accessibilityInputLabels(["close", "done"])

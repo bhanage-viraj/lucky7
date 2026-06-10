@@ -28,6 +28,10 @@ struct SessionDetails: View {
     @State private var showCamera = false
     @State private var showLibrary = false
 
+    // Drives the darker "active" outline on whichever field is in use.
+    @FocusState private var focusedField: Field?
+    private enum Field { case title, description }
+
     private let maxSnapshots = 6
     private let maxTitleLength = 30
 
@@ -53,6 +57,11 @@ struct SessionDetails: View {
         !sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
         !sessionDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
         !uploadedSnapshots.isEmpty
+    }
+
+    /// The snapshots field counts as "active" while its picker / camera / dialog is open.
+    private var snapshotFieldActive: Bool {
+        showImageSourceDialog || showCamera || showLibrary
     }
 
     private func addSnapshot(_ image: UIImage) {
@@ -109,13 +118,15 @@ struct SessionDetails: View {
                     .multilineTextAlignment(.center)
 
                 LabeledField(title: "TITLE") {
-                    TextField("Give your session a title", text: $sessionTitle)
+                    TextField("", text: $sessionTitle)
                         .font(.system(size: 15))
                         .foregroundColor(.black)
+                        .fixedPlaceholder("Give your session a title", isEmpty: sessionTitle.isEmpty, font: .system(size: 15))
                         .padding(.horizontal, 16)
                         .padding(.vertical, 16)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .formFieldStyle()
+                        .focused($focusedField, equals: .title)
+                        .formFieldStyle(isActive: focusedField == .title)
                         .accessibilityLabel("Session title")
                         .accessibilityHint("Up to \(maxTitleLength) characters")
                         .onChange(of: sessionTitle) { _, newValue in
@@ -127,17 +138,19 @@ struct SessionDetails: View {
 
                 LabeledField(title: "HOW DID IT GO?") {
                     TextField(
-                        "How do you feel during and after the session?",
+                        "",
                         text: $sessionDescription,
                         axis: .vertical
                     )
                     .lineLimit(3...8)
                     .font(.system(size: 15))
                     .foregroundColor(.black)
+                    .fixedPlaceholder("How do you feel during and after the session?", isEmpty: sessionDescription.isEmpty, font: .system(size: 15), alignment: .topLeading)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
                     .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
-                    .formFieldStyle()
+                    .focused($focusedField, equals: .description)
+                    .formFieldStyle(isActive: focusedField == .description)
                     .accessibilityLabel("Session description")
                     .accessibilityHint("How you felt during and after the session")
                 }
@@ -173,7 +186,7 @@ struct SessionDetails: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 34)
                 }
-                .formFieldStyle()
+                .formFieldStyle(isActive: snapshotFieldActive)
                 .accessibilityLabel("Add activity snapshots")
                 .accessibilityHint("Take a photo or choose from your library")
             } else {
@@ -219,7 +232,7 @@ struct SessionDetails: View {
                     }
                     .padding(12)
                 }
-                .formFieldStyle()
+                .formFieldStyle(isActive: snapshotFieldActive)
             }
         }
         .confirmationDialog("Add a snapshot", isPresented: $showImageSourceDialog, titleVisibility: .visible) {
@@ -302,6 +315,13 @@ struct SessionDetails: View {
             trimmed.isEmpty ? "Untitled session" : trimmed,
             durationSeconds: sessionDuration
         )
+        // Export the activity snapshots to Photos too (like the wrap video).
+        let snapshotsToExport = uploadedSnapshots
+        Task {
+            for image in snapshotsToExport {
+                try? await PhotoLibrarySaver.saveImage(image)
+            }
+        }
         onSave?()
     }
 }
@@ -413,16 +433,31 @@ struct LabeledField<Content: View>: View {
 }
 
 extension View {
-    /// White rounded-rectangle field with a thin dark outline.
-    func formFieldStyle() -> some View {
+    /// White rounded-rectangle field with a dark outline. The outline darkens and
+    /// thickens while the field is active (focused, or its picker is open).
+    func formFieldStyle(isActive: Bool = false) -> some View {
         background(
             RoundedRectangle(cornerRadius: 14)
                 .fill(Color.white)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.black.opacity(0.35), lineWidth: 1.5)
+                .stroke(Color.black.opacity(isActive ? 0.9 : 0.35), lineWidth: isActive ? 2 : 1.5)
         )
+        .animation(.easeInOut(duration: 0.15), value: isActive)
+    }
+
+    /// Overlays a fixed-grey placeholder while `isEmpty` is true. The system placeholder
+    /// turns light in dark mode and vanishes on our white fields, so we draw our own with
+    /// a non-adaptive colour that stays legible in both light and dark mode.
+    func fixedPlaceholder(_ text: String, isEmpty: Bool, font: Font, alignment: Alignment = .leading) -> some View {
+        overlay(alignment: alignment) {
+            Text(text)
+                .font(font)
+                .foregroundColor(Color(white: 0.45))
+                .allowsHitTesting(false)
+                .opacity(isEmpty ? 1 : 0)
+        }
     }
 }
 

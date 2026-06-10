@@ -4,6 +4,7 @@
 //
 
 import Photos
+import UIKit
 
 enum PhotoLibrarySaver {
     enum SaveError: LocalizedError {
@@ -33,23 +34,64 @@ enum PhotoLibrarySaver {
         }
     }
 
-    static func saveVideo(at url: URL) async throws {
+    /// Saves the video and returns the new asset's Photos local identifier, so the
+    /// session can delete exactly this copy from the library later.
+    @discardableResult
+    static func saveVideo(at url: URL) async throws -> String? {
         guard await requestAddPermissionIfNeeded() else {
             throw SaveError.denied
         }
 
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String?, Error>) in
+            var localId: String?
+            PHPhotoLibrary.shared().performChanges {
+                let request = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
+                localId = request?.placeholderForCreatedAsset?.localIdentifier
+            } completionHandler: { success, error in
+                if let error {
+                    continuation.resume(throwing: SaveError.failed(error.localizedDescription))
+                } else if success {
+                    continuation.resume(returning: localId)
+                } else {
+                    continuation.resume(throwing: SaveError.failed("Could not save video to Photos."))
+                }
+            }
+        }
+    }
+
+    /// Saves a single image (e.g. an activity snapshot) to the Photos library.
+    static func saveImage(_ image: UIImage) async throws {
+        guard await requestAddPermissionIfNeeded() else {
+            throw SaveError.denied
+        }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             PHPhotoLibrary.shared().performChanges {
-                PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
+                PHAssetChangeRequest.creationRequestForAsset(from: image)
             } completionHandler: { success, error in
                 if let error {
                     continuation.resume(throwing: SaveError.failed(error.localizedDescription))
                 } else if success {
                     continuation.resume()
                 } else {
-                    continuation.resume(throwing: SaveError.failed("Could not save video to Photos."))
+                    continuation.resume(throwing: SaveError.failed("Could not save photo to Photos."))
                 }
             }
+        }
+    }
+
+    /// Removes a previously-saved wrap from the Photos library. iOS shows its own
+    /// deletion confirmation. No-ops if the id is missing or the asset is already gone.
+    static func deleteAsset(withLocalId id: String) {
+        Task {
+            // Deleting needs read-write access (add-only can't fetch the asset to delete).
+            // iOS still shows its own deletion confirmation for app-created assets.
+            let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+            guard status == .authorized || status == .limited else { return }
+            let assets = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil)
+            guard assets.firstObject != nil else { return }
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.deleteAssets(assets)
+            } completionHandler: { _, _ in }
         }
     }
 }
