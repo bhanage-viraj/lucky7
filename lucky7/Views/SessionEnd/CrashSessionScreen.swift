@@ -110,6 +110,7 @@ struct CrashSessionScreen: View {
         if let session = try? context.fetch(descriptor).first {
             session.wrappedVideoPath = name
             try? context.save()
+            print("RH_REC CrashSession persist wrapped session=\(sessionId) path=\(name)")
         }
     }
 
@@ -120,6 +121,7 @@ struct CrashSessionScreen: View {
         if let session = try? context.fetch(descriptor).first {
             session.rawClipPath = name
             try? context.save()
+            print("RH_REC CrashSession persist raw session=\(sessionId) path=\(name)")
         }
     }
 
@@ -225,6 +227,7 @@ struct CrashSessionScreen: View {
         )
         context.insert(session)
         sessionId = id
+        print("RH_REC CrashSession create session=\(id) wrapped=\(session.wrappedVideoPath ?? "nil") raw=\(session.rawClipPath ?? "nil")")
     }
 
     private func completeFlow() {

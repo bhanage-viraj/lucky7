@@ -99,6 +99,16 @@ struct SessionAnalytics: View {
             ?? WrapStorage.resolveVideoURL(session?.rawClipPath)
     }
 
+    private func logVideoResolution() {
+        guard let session else {
+            print("RH_REC Analytics session missing id=\(sessionId)")
+            return
+        }
+        let wrapped = WrapStorage.resolveVideoURL(session.wrappedVideoPath)
+        let raw = WrapStorage.resolveVideoURL(session.rawClipPath)
+        print("RH_REC Analytics session=\(sessionId) storedWrapped=\(session.wrappedVideoPath ?? "nil") resolvedWrapped=\(wrapped?.lastPathComponent ?? "nil") storedRaw=\(session.rawClipPath ?? "nil") resolvedRaw=\(raw?.lastPathComponent ?? "nil") playable=\(playableVideoURL?.lastPathComponent ?? "nil")")
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -160,6 +170,7 @@ struct SessionAnalytics: View {
         .hidesFloatingTabBar()
         .onAppear {
             distractionStat.fetchDistractions(for: sessionId, context: context)
+            logVideoResolution()
         }
         .task(id: sessionId) {
             await loadThumbnailIfNeeded()

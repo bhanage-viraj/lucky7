@@ -372,6 +372,7 @@ struct SessionDetails: View {
             }
             sessionDuration = session.actualDuration
             try? context.save()
+            print("RH_REC SessionDetails saved text session=\(sessionId) raw=\(session.rawClipPath ?? "nil") wrapped=\(session.wrappedVideoPath ?? "nil")")
         }
 
         // Burn in the user's title and the session's actual focus duration as the hero number.
@@ -388,6 +389,7 @@ struct SessionDetails: View {
                     session.rawClipPath = rawName
                 }
                 try? context.save()
+                print("RH_REC SessionDetails final callback session=\(sessionId) final=\(finalURL?.lastPathComponent ?? "nil") raw=\(session.rawClipPath ?? "nil") wrapped=\(session.wrappedVideoPath ?? "nil")")
             }
 
             guard hasRecoverableVideo(finalURL: finalURL) else {
@@ -413,17 +415,22 @@ struct SessionDetails: View {
 
     private func hasRecoverableVideo(finalURL: URL?) -> Bool {
         if let finalURL, FileManager.default.fileExists(atPath: finalURL.path) {
+            print("RH_REC SessionDetails recoverable via final=\(finalURL.lastPathComponent)")
             return true
         }
         if let rawURL = sessionRecording.rawClipURL,
            FileManager.default.fileExists(atPath: rawURL.path) {
+            print("RH_REC SessionDetails recoverable via live raw=\(rawURL.lastPathComponent)")
             return true
         }
         guard let session = sessions.first(where: { $0.id == sessionId }) else {
+            print("RH_REC SessionDetails not recoverable: session missing")
             return false
         }
-        return WrapStorage.resolveVideoURL(session.wrappedVideoPath) != nil
-            || WrapStorage.resolveVideoURL(session.rawClipPath) != nil
+        let wrapped = WrapStorage.resolveVideoURL(session.wrappedVideoPath)
+        let raw = WrapStorage.resolveVideoURL(session.rawClipPath)
+        print("RH_REC SessionDetails recover check storedWrapped=\(session.wrappedVideoPath ?? "nil") resolvedWrapped=\(wrapped?.lastPathComponent ?? "nil") storedRaw=\(session.rawClipPath ?? "nil") resolvedRaw=\(raw?.lastPathComponent ?? "nil")")
+        return wrapped != nil || raw != nil
     }
 }
 

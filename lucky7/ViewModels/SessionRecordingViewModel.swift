@@ -63,11 +63,13 @@ final class SessionRecordingViewModel: ObservableObject {
     }
 
     func prepareCamera() {
+        log("prepareCamera")
         timelapseManager.requestPermissionAndConfigure { [weak self] granted in
             Task { @MainActor in
                 guard let self else { return }
                 self.cameraReady = granted
                 self.permissionDenied = !granted
+                self.log("prepareCamera result granted=\(granted)")
                 if granted {
                     self.timelapseManager.startRunning()
                     self.statusMessage = nil
@@ -91,12 +93,15 @@ final class SessionRecordingViewModel: ObservableObject {
     }
 
     func startRecording(plannedSessionSeconds: TimeInterval, completion: ((Bool) -> Void)? = nil) {
+        log("startRecording requested cameraReady=\(cameraReady) isRecording=\(isRecording) planned=\(plannedSessionSeconds)")
         guard cameraReady else {
             lastError = "Camera is not ready yet."
+            log("startRecording blocked: camera not ready")
             completion?(false)
             return
         }
         guard !isRecording else {
+            log("startRecording ignored: already recording")
             completion?(true)
             return
         }
@@ -117,11 +122,13 @@ final class SessionRecordingViewModel: ObservableObject {
                 if started {
                     self.isRecording = true
                     self.didCaptureThisSession = true
+                    self.log("startRecording succeeded")
                     ScreenWakeLock.setActive(true)
                     AccessibilitySupport.announce("Recording started")
                 } else {
                     self.lastError = "Could not start recording."
                     self.statusMessage = nil
+                    self.log("startRecording failed from timelapse")
                 }
                 completion?(started)
             }
@@ -129,12 +136,14 @@ final class SessionRecordingViewModel: ObservableObject {
     }
 
     func pauseRecording() {
+        log("pauseRecording")
         timelapseManager.pauseCapture()
         statusMessage = "Recording paused"
         AccessibilitySupport.announce("Recording paused")
     }
 
     func resumeRecording() {
+        log("resumeRecording")
         timelapseManager.restartRunning()
         timelapseManager.resumeCapture()
         statusMessage = "Recording…"
@@ -142,6 +151,7 @@ final class SessionRecordingViewModel: ObservableObject {
     }
 
     func recoverCameraAfterInterruption() {
+        log("recoverCameraAfterInterruption")
         timelapseManager.restartRunning()
     }
 
@@ -152,14 +162,17 @@ final class SessionRecordingViewModel: ObservableObject {
         if let wallClockSeconds {
             recordedWallClockSeconds = wallClockSeconds
         }
+        log("stopRecordingAndExport requested wall=\(recordedWallClockSeconds) isRecording=\(isRecording) didCapture=\(didCaptureThisSession) stopping=\(isStoppingRecording)")
 
         stopCompletions.append(completion)
 
         if isStoppingRecording {
+            log("stopRecordingAndExport queued while stopping")
             return
         }
 
         guard isRecording || didCaptureThisSession else {
+            log("stopRecordingAndExport no-op: no active capture")
             finishStopCompletions()
             return
         }
@@ -174,6 +187,8 @@ final class SessionRecordingViewModel: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.isStoppingRecording = false
+                let rawExists = result.url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+                self.log("stopRecording result url=\(result.url?.lastPathComponent ?? "nil") exists=\(rawExists) frames=\(result.frameCount)")
 
                 guard let rawURL = result.url, result.frameCount > 0 else {
                     let pending = self.pendingTitleExport
@@ -194,6 +209,7 @@ final class SessionRecordingViewModel: ObservableObject {
                 self.lastExportFrameCount = result.frameCount
                 self.previewFrames = Self.extractPreviewFrames(from: rawURL, count: 3)
                 self.rawClipURL = Self.copyRawClipToDurableStorage(rawURL)
+                self.log("raw prepared previewFrames=\(self.previewFrames.count) fallback=\(self.rawClipURL?.lastPathComponent ?? "nil")")
                 self.didCaptureThisSession = false
                 self.statusMessage = "Ready to save"
                 self.startCleanSliceExport(from: rawURL)
@@ -227,6 +243,7 @@ final class SessionRecordingViewModel: ObservableObject {
         let token = cleanSliceToken
         cleanSliceRawURL = rawURL
         let sliceURL = WrapStorage.newSessionSliceURL()
+        log("cleanSlice start raw=\(rawURL.lastPathComponent) slice=\(sliceURL.lastPathComponent)")
         Task { [weak self] in
             let ok = await ExportEngine.shared.generateCleanSlice(
                 rawVideoURL: rawURL,
@@ -241,8 +258,10 @@ final class SessionRecordingViewModel: ObservableObject {
                         try? FileManager.default.removeItem(at: previous)
                     }
                     self.rawClipURL = sliceURL
+                    self.log("cleanSlice success slice=\(sliceURL.lastPathComponent)")
                 } else {
                     try? FileManager.default.removeItem(at: sliceURL)
+                    self.log("cleanSlice failed ok=\(ok) isCurrent=\(isCurrentSlice)")
                 }
                 if self.rawURLsPendingDeletion.remove(rawURL) != nil {
                     try? FileManager.default.removeItem(at: rawURL)
@@ -262,14 +281,16 @@ final class SessionRecordingViewModel: ObservableObject {
                 try FileManager.default.removeItem(at: fallbackURL)
             }
             try FileManager.default.copyItem(at: rawURL, to: fallbackURL)
+            print("RH_REC SessionRecording raw fallback copied from=\(rawURL.lastPathComponent) to=\(fallbackURL.lastPathComponent)")
             return fallbackURL
         } catch {
-            print("SessionRecording: raw fallback copy failed – \(error.localizedDescription)")
+            print("RH_REC SessionRecording raw fallback copy failed error=\(error.localizedDescription)")
             return nil
         }
     }
 
     func resetForNewSession() {
+        log("resetForNewSession final=\(finalVideoURL?.lastPathComponent ?? "nil") raw=\(rawClipURL?.lastPathComponent ?? "nil")")
         ScreenWakeLock.release()
         isRecording = false
         isExporting = false
@@ -321,9 +342,9 @@ final class SessionRecordingViewModel: ObservableObject {
             savedToPhotos = true
             statusMessage = "Saved to Photos"
             AccessibilitySupport.announce("Saved to Photos")
-            print("SessionRecording: saved wrap to Photos")
+            log("saved wrap to Photos asset=\(photoAssetId ?? "nil")")
         } catch {
-            print("SessionRecording: Photos save failed – \(error.localizedDescription)")
+            log("Photos save failed error=\(error.localizedDescription)")
             // Video is still available in-app via finalVideoURL and Share.
             lastError = error.localizedDescription
         }
@@ -422,6 +443,7 @@ final class SessionRecordingViewModel: ObservableObject {
         completion: ((URL?) -> Void)? = nil
     ) {
         let exportTitle = normalizedTitle(title)
+        log("reexportWithTitle title=\(exportTitle) duration=\(durationSeconds) saveToPhotos=\(saveToPhotos) isExporting=\(isExporting) retainedRaw=\(retainedRawURL?.lastPathComponent ?? "nil") frameCount=\(lastExportFrameCount)")
 
         if let finalVideoURL, completedTitleExportTitle == exportTitle {
             finishCachedTitleExport(
@@ -466,6 +488,7 @@ final class SessionRecordingViewModel: ObservableObject {
                     completions: completion.map { [$0] } ?? []
                 )
             } else {
+                log("reexportWithTitle no retained raw; returning cached final=\(finalVideoURL?.lastPathComponent ?? "nil")")
                 completion?(finalVideoURL)
             }
             return
@@ -538,6 +561,7 @@ final class SessionRecordingViewModel: ObservableObject {
         completions: [(URL?) -> Void]
     ) {
         guard let raw = retainedRawURL, lastExportFrameCount > 0 else {
+            log("startTitleExport missing raw/frameCount final=\(finalVideoURL?.lastPathComponent ?? "nil")")
             completions.forEach { $0(finalVideoURL) }
             return
         }
@@ -550,6 +574,7 @@ final class SessionRecordingViewModel: ObservableObject {
         ScreenWakeLock.setActive(true)
         // Prefer the session's actual duration; fall back to the recorded wall-clock.
         let secs = durationSeconds > 0 ? durationSeconds : recordedWallClockSeconds
+        log("titleExport start title=\(title) raw=\(raw.lastPathComponent) frames=\(lastExportFrameCount) duration=\(secs)")
         exportEngine.generateWrappedVideo(
             rawVideoURL: raw,
             capturedFrameCount: lastExportFrameCount,
@@ -566,6 +591,8 @@ final class SessionRecordingViewModel: ObservableObject {
                 self.isExporting = false
                 self.statusMessage = nil
                 if let finalURL {
+                    let exists = FileManager.default.fileExists(atPath: finalURL.path)
+                    self.log("titleExport success final=\(finalURL.lastPathComponent) exists=\(exists)")
                     // Every re-title renders a fresh file in the finals dir — drop the
                     // one it replaces so title edits don't pile up orphaned videos.
                     if let old = self.finalVideoURL, old != finalURL {
@@ -583,6 +610,7 @@ final class SessionRecordingViewModel: ObservableObject {
                     }
                 } else {
                     self.lastError = "Could not stitch session video."
+                    self.log("titleExport failed final=nil")
                 }
                 ScreenWakeLock.release()
                 callbacks.forEach { $0(finalURL) }
@@ -610,5 +638,9 @@ final class SessionRecordingViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    private func log(_ message: String) {
+        print("RH_REC SessionRecording \(message)")
     }
 }
