@@ -29,6 +29,7 @@ struct FinishSessionScreen: View {
     @State private var step: SessionEndStep = .celebration
     @State private var sessionId: UUID?
     @State private var hasCompletedFlow = false
+    @State private var isWaitingForPreviewFrames = false
 
     var body: some View {
         ZStack {
@@ -89,6 +90,10 @@ struct FinishSessionScreen: View {
         }
         .onChange(of: sessionRecording.photoAssetId) { _, id in
             persistPhotoAssetId(id)
+        }
+        .onChange(of: sessionRecording.previewFrames.count) { _, count in
+            guard isWaitingForPreviewFrames, count > 0 else { return }
+            showDetails(reason: "preview ready")
         }
     }
 
@@ -177,7 +182,7 @@ struct FinishSessionScreen: View {
                 Spacer()
 
                 Button(action: advanceToDetails) {
-                    Text("Tap to go to the next screen")
+                    Text(isWaitingForPreviewFrames ? "Preparing preview..." : "Tap to go to the next screen")
                         .font(.system(size: 14))
                         .opacity(appeared ? 0.8 : 0)
                         .animation(.easeIn(duration: 0.5).delay(0.8), value: appeared)
@@ -195,7 +200,24 @@ struct FinishSessionScreen: View {
     }
 
     private func advanceToDetails() {
+        guard sessionId != nil, step == .celebration, !isWaitingForPreviewFrames else { return }
+        guard videoFrames.isEmpty else {
+            showDetails(reason: "preview already ready")
+            return
+        }
+
+        isWaitingForPreviewFrames = true
+        RecordingDiagnostics.log("FinishSession waiting for preview frames")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            guard isWaitingForPreviewFrames, step == .celebration else { return }
+            showDetails(reason: "preview wait fallback count=\(videoFrames.count)")
+        }
+    }
+
+    private func showDetails(reason: String) {
         guard sessionId != nil, step == .celebration else { return }
+        isWaitingForPreviewFrames = false
+        RecordingDiagnostics.log("FinishSession show details reason=\(reason) previewFrames=\(videoFrames.count)")
         withAnimation(stepAnimation) {
             step = .details
         }
