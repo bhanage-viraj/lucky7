@@ -89,8 +89,7 @@ final class ExportEngine {
                     )
                 }
 
-                let outputURL = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("wrapped_\(UUID().uuidString).mp4")
+                let outputURL = WrapStorage.newFinalURL()
 
                 if FileManager.default.fileExists(atPath: outputURL.path) {
                     try FileManager.default.removeItem(at: outputURL)

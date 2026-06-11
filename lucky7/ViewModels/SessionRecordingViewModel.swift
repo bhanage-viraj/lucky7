@@ -540,6 +540,11 @@ final class SessionRecordingViewModel: ObservableObject {
                 self.isExporting = false
                 self.statusMessage = nil
                 if let finalURL {
+                    // Every re-title renders a fresh file in the finals dir — drop the
+                    // one it replaces so title edits don't pile up orphaned videos.
+                    if let old = self.finalVideoURL, old != finalURL {
+                        try? FileManager.default.removeItem(at: old)
+                    }
                     self.finalVideoURL = finalURL
                     if self.previewFrames.isEmpty {
                         self.previewFrames = Self.extractPreviewFrames(from: finalURL, count: 3)

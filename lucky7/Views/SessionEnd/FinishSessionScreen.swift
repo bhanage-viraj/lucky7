@@ -103,21 +103,23 @@ struct FinishSessionScreen: View {
     }
 
     private func persistWrappedVideoPath(_ url: URL?) {
-        guard let sessionId, let path = url?.path else { return }
+        // Store just the filename — absolute paths die when iOS rotates the app
+        // container on update; WrapStorage.resolveVideoURL finds the file at read time.
+        guard let sessionId, let name = url?.lastPathComponent else { return }
         var descriptor = FetchDescriptor<Session>(predicate: #Predicate { $0.id == sessionId })
         descriptor.fetchLimit = 1
         if let session = try? context.fetch(descriptor).first {
-            session.wrappedVideoPath = path
+            session.wrappedVideoPath = name
             try? context.save()
         }
     }
 
     private func persistRawClipPath(_ url: URL?) {
-        guard let sessionId, let path = url?.path else { return }
+        guard let sessionId, let name = url?.lastPathComponent else { return }
         var descriptor = FetchDescriptor<Session>(predicate: #Predicate { $0.id == sessionId })
         descriptor.fetchLimit = 1
         if let session = try? context.fetch(descriptor).first {
-            session.rawClipPath = path
+            session.rawClipPath = name
             try? context.save()
         }
     }
@@ -208,8 +210,8 @@ struct FinishSessionScreen: View {
             duration: duration,
             startTime: endTime.addingTimeInterval(-duration),
             endTime: endTime,
-            wrappedVideoPath: sessionRecording.finalVideoURL?.path,
-            rawClipPath: sessionRecording.rawClipURL?.path
+            wrappedVideoPath: sessionRecording.finalVideoURL?.lastPathComponent,
+            rawClipPath: sessionRecording.rawClipURL?.lastPathComponent
         )
         context.insert(session)
         sessionId = id

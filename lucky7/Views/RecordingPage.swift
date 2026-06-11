@@ -51,6 +51,11 @@ struct RecordingPage: View {
     @State private var unlock: UnlockInfo?
     @State private var breakBlockedInfo: BreakBlockedInfo?
 
+    // leaving the app auto-pauses the session; this drives the "paused while you were
+    // away" card on return so nobody stares at a frozen timer wondering why
+    @State private var pausedByBackground = false
+    @State private var awayPause: AwayPauseInfo?
+
     struct PendingPrompt: Identifiable {
         let id = UUID()
         let distraction: Distraction
@@ -66,6 +71,10 @@ struct RecordingPage: View {
     // shown instead of the reason form when a break is already running — only one
     // app can be unlocked at a time, so a second "Break It" is rejected with a warning.
     struct BreakBlockedInfo: Identifiable {
+        let id = UUID()
+    }
+
+    struct AwayPauseInfo: Identifiable {
         let id = UUID()
     }
 
@@ -330,6 +339,14 @@ struct RecordingPage: View {
                     onDismiss: { breakBlockedInfo = nil }
                 )
                 .id(b.id)
+            } else if let a = awayPause {
+                FocusAlertCard(
+                    title: "Session Paused",
+                    message: "Your session paused while you were away. Tap the play button to resume.",
+                    autoDismiss: true,
+                    onDismiss: { awayPause = nil }
+                )
+                .id(a.id)
             }
             #endif
         }
@@ -393,6 +410,14 @@ struct RecordingPage: View {
                 SessionNotifications.cancelAwayNudges()   // they're back — drop the "still there?" pings
                 // notifications ARE the return path now — re-nudge if they got denied mid-session
                 Task { if await NotificationPermission.isDenied() { showNotifNudge = true } }
+                // back to a session that auto-paused on the way out — make the paused
+                // state unmissable (unless a break prompt/card is already taking over)
+                if pausedByBackground {
+                    pausedByBackground = false
+                    if pendingPrompt == nil, unlock == nil, breakBlockedInfo == nil {
+                        awayPause = AwayPauseInfo()
+                    }
+                }
             case .background:
                 let shouldNudgeAway = hasStarted && sessionRecording.isRecording
                 // left the app → pause the session instead of letting it silently freeze and
@@ -400,6 +425,7 @@ struct RecordingPage: View {
                 if hasStarted && sessionTimer.isRunning {
                     sessionTimer.pause()
                     sessionRecording.pauseRecording()
+                    pausedByBackground = true
                 }
                 #if os(iOS)
                 // away from a paused session (and not on a break) → ping them to come back
@@ -726,6 +752,8 @@ struct RecordingPage: View {
         }
         hasStarted = false
         isStartingSession = false
+        pausedByBackground = false
+        awayPause = nil
         sessionTimer.pause()
         SessionNotifications.cancelAwayNudges()
         // Embedded: keep the shared camera running so it flows straight back into the
@@ -775,6 +803,8 @@ struct RecordingPage: View {
             } else {
                 // RESUME recording — and end any active break so the unlocked
                 // app re-blocks when you go back to focusing
+                pausedByBackground = false
+                awayPause = nil
                 sessionTimer.start()
                 sessionRecording.resumeRecording()
                 #if os(iOS)

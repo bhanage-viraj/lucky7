@@ -21,10 +21,13 @@ final class Session: Identifiable {
     
     // Linked Media
     var videoWrapId: UUID?         // Links to the final Timelapse once generated
-    var wrappedVideoPath: String?  // Temp-file path to the 30s wrapped export
+    // Filename of the titled wrap in Wraps/finals. Legacy rows hold absolute paths
+    // (stale after any app update) — always read through WrapStorage.resolveVideoURL.
+    var wrappedVideoPath: String?
     var photoAssetId: String?      // Photos-library local id for the saved wrap (for deletion)
-    // Persistent, TEXT-FREE short slice (1080×1920) used to build weekly/monthly recaps.
-    // Pruned once both its weekly and monthly recaps have been generated.
+    // Filename of the persistent, TEXT-FREE short slice (1080×1920) in Wraps/sessions,
+    // used to build weekly/monthly recaps. Pruned once both recaps exist. Legacy rows
+    // hold absolute paths — read through WrapStorage.resolveVideoURL.
     var rawClipPath: String?
 
     var title: String

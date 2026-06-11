@@ -53,6 +53,13 @@ struct WrappedVideoScreen: View {
         videoURL != nil
     }
 
+    /// The live flow's export is still rendering this wrap (nothing persisted yet).
+    /// A session WITH a stored path but no resolvable file is gone for good — that
+    /// gets the "unavailable" treatment instead of a spinner that never ends.
+    private var isFinishingExport: Bool {
+        sessionRecording.isExporting && session?.wrappedVideoPath == nil
+    }
+
     private var displayTitle: String {
         switch kind {
         case .session:
@@ -94,11 +101,9 @@ struct WrappedVideoScreen: View {
             // The saved session path is authoritative. Avoid falling back to the
             // global live export URL here; from History that can point at a
             // different, more recent session and share/play the wrong wrap.
-            if let url = existingFileURL(path: session?.wrappedVideoPath) { return url }
-            return nil
+            return WrapStorage.resolveVideoURL(session?.wrappedVideoPath)
         case .weekly, .monthly:
-            if let url = existingFileURL(path: periodWrap?.videoPath) { return url }
-            return nil
+            return WrapStorage.resolveVideoURL(periodWrap?.videoPath)
         }
     }
 
@@ -164,16 +169,6 @@ struct WrappedVideoScreen: View {
 
     // MARK: - Player
 
-    private func existingFileURL(path: String?) -> URL? {
-        guard let path, !path.isEmpty else { return nil }
-        return existingFileURL(URL(fileURLWithPath: path))
-    }
-
-    private func existingFileURL(_ url: URL?) -> URL? {
-        guard let url, FileManager.default.fileExists(atPath: url.path) else { return nil }
-        return url
-    }
-
     /// Builds (or rebuilds) the player once a wrap file exists.
     /// No-ops while we're still waiting, or if we're already playing this exact URL.
     private func syncPlayer() {
@@ -226,7 +221,11 @@ struct WrappedVideoScreen: View {
             .foregroundColor(.white)
             .opacity(shareableVideoURL == nil ? 0.45 : 1)
             .accessibilityLabel("Share video")
-            .accessibilityHint(shareableVideoURL == nil ? "Video is still finishing" : "Opens sharing options for this wrap video")
+            .accessibilityHint(
+                shareableVideoURL != nil ? "Opens sharing options for this wrap video"
+                    : isFinishingExport ? "Video is still finishing"
+                    : "Video unavailable"
+            )
             .accessibilityInputLabels(["share", "share video", "export"])
     }
 
@@ -261,17 +260,37 @@ struct WrappedVideoScreen: View {
             }
             .overlay {
                 // While the titled wrap is still rendering, keep a spinner over the poster
-                // frame instead of playing the not-yet-final video.
+                // frame instead of playing the not-yet-final video. When no export is
+                // running and the file is gone, say so — an endless spinner here used to
+                // mask permanently lost videos.
                 if case .session = kind, !isWrapReady {
                     ZStack {
                         Color.black.opacity(0.4)
-                        VStack(spacing: 12) {
-                            ProgressView()
-                                .tint(.white)
-                                .scaleEffect(1.3)
-                            Text("Finishing your wrap…")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.white)
+                        if isFinishingExport {
+                            VStack(spacing: 12) {
+                                ProgressView()
+                                    .tint(.white)
+                                    .scaleEffect(1.3)
+                                Text("Finishing your wrap…")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+                        } else {
+                            VStack(spacing: 12) {
+                                Image(systemName: "video.slash.fill")
+                                    .font(.system(size: 30))
+                                    .foregroundColor(.white.opacity(0.85))
+                                Text("Video unavailable")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(.white)
+                                Text("This wrap's video is no longer on this device.")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.white.opacity(0.8))
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 24)
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("Video unavailable")
                         }
                     }
                 }

@@ -426,17 +426,12 @@ struct SessionRow: View {
     }
 
     private var posterSourceURL: URL? {
-        existingFileURL(path: session.wrappedVideoPath) ?? existingFileURL(path: session.rawClipPath)
+        WrapStorage.resolveVideoURL(session.wrappedVideoPath)
+            ?? WrapStorage.resolveVideoURL(session.rawClipPath)
     }
 
     private var posterTaskKey: String {
         "\(session.wrappedVideoPath ?? "")|\(session.rawClipPath ?? "")"
-    }
-
-    private func existingFileURL(path: String?) -> URL? {
-        guard let path, !path.isEmpty else { return nil }
-        let url = URL(fileURLWithPath: path)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     var body: some View {

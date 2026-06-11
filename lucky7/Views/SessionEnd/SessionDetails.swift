@@ -360,8 +360,8 @@ struct SessionDetails: View {
             session.snapshotImages = uploadedSnapshots.compactMap {
                 $0.jpegData(compressionQuality: 0.8)
             }
-            if let rawPath = sessionRecording.rawClipURL?.path {
-                session.rawClipPath = rawPath
+            if let rawName = sessionRecording.rawClipURL?.lastPathComponent {
+                session.rawClipPath = rawName
             }
             sessionDuration = session.actualDuration
             try? context.save()
@@ -375,7 +375,7 @@ struct SessionDetails: View {
         ) { finalURL in
             if let finalURL,
                let session = sessions.first(where: { $0.id == sessionId }) {
-                session.wrappedVideoPath = finalURL.path
+                session.wrappedVideoPath = finalURL.lastPathComponent
                 try? context.save()
             }
 
