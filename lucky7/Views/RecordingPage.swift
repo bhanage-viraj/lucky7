@@ -431,7 +431,6 @@ struct RecordingPage: View {
                         sessionRecording.pauseRecording()
                         pausedByBackground = true
                     }
-                    sessionRecording.stopCamera()
                 }
                 #if os(iOS)
                 // away from a paused session (and not on a break) → ping them to come back

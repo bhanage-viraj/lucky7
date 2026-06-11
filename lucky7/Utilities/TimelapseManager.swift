@@ -35,6 +35,7 @@ final class TimelapseManager: NSObject {
     private var recordingStartWallSeconds: Double?
     private var totalPausedSeconds: Double = 0
     private var pauseBeganWallSeconds: Double?
+    private var configuredPosition: AVCaptureDevice.Position = .front
 
     private(set) var outputURL: URL?
     private(set) var lastCapturedFrameCount = 0
@@ -112,7 +113,7 @@ final class TimelapseManager: NSObject {
     }
 
     func startRecording(plannedSessionSeconds: TimeInterval, completion: ((Bool) -> Void)? = nil) {
-        sessionQueue.async {
+        writerQueue.async {
             self.resetWriterState()
             self.plannedSessionSeconds = max(plannedSessionSeconds, AppConstants.minimumPlannedSessionSeconds)
             self.captureIntervalSeconds = AppConstants.captureIntervalSeconds(plannedSessionSeconds: self.plannedSessionSeconds)
@@ -147,7 +148,7 @@ final class TimelapseManager: NSObject {
     }
 
     func stopRecording(completion: @escaping (TimelapseStopResult) -> Void) {
-        sessionQueue.async {
+        writerQueue.async {
             guard self.isRecording else {
                 DispatchQueue.main.async {
                     completion(TimelapseStopResult(url: nil, frameCount: 0))
@@ -188,10 +189,12 @@ final class TimelapseManager: NSObject {
                 } else {
                     print("TimelapseManager: finishWriting failed – \(writer.error?.localizedDescription ?? "unknown")")
                 }
-                self.lastCapturedFrameCount = captured
-                self.resetWriterState()
-                DispatchQueue.main.async {
-                    completion(TimelapseStopResult(url: url, frameCount: captured))
+                self.writerQueue.async {
+                    self.lastCapturedFrameCount = captured
+                    self.resetWriterState()
+                    DispatchQueue.main.async {
+                        completion(TimelapseStopResult(url: url, frameCount: captured))
+                    }
                 }
             }
         }
@@ -218,6 +221,7 @@ final class TimelapseManager: NSObject {
             }
 
             self.session.addInput(input)
+            self.configuredPosition = position
 
             let output = AVCaptureVideoDataOutput()
             output.videoSettings = [
@@ -293,7 +297,7 @@ final class TimelapseManager: NSObject {
         CMTime(value: CMTimeValue(index), timescale: CMTimeScale(AppConstants.wrappedOutputFPS))
     }
 
-    private func setupWriterIfNeeded(from sampleBuffer: CMSampleBuffer) async -> Bool {
+    private func setupWriterIfNeeded(from sampleBuffer: CMSampleBuffer) -> Bool {
         guard let writer = assetWriter, writer.status == .unknown else {
             return isWriterReady
         }
@@ -313,10 +317,11 @@ final class TimelapseManager: NSObject {
 
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
         input.expectsMediaDataInRealTime = true
-        input.transform = await VideoOrientationHelper.writerTransform(
+        input.transform = VideoOrientationHelper.writerTransform(
             bufferWidth: width,
             bufferHeight: height,
-            cameraPosition: currentPosition()
+            cameraPosition: configuredPosition,
+            orientation: VideoOrientationHelper.currentInterfaceOrientationSync()
         )
 
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
@@ -341,13 +346,13 @@ final class TimelapseManager: NSObject {
         return true
     }
 
-    private func appendFrame(from sampleBuffer: CMSampleBuffer) async {
+    private func appendFrame(from sampleBuffer: CMSampleBuffer) {
         guard isRecording, !capturePaused, let writer = assetWriter else { return }
         guard writer.status != .failed else { return }
 
         cameraFrameIndex += 1
         if !isWriterReady {
-            guard await setupWriterIfNeeded(from: sampleBuffer) else { return }
+            guard setupWriterIfNeeded(from: sampleBuffer) else { return }
         }
 
         guard writer.status == .writing,
@@ -371,13 +376,11 @@ final class TimelapseManager: NSObject {
 }
 
 extension TimelapseManager: AVCaptureVideoDataOutputSampleBufferDelegate {
-    nonisolated func captureOutput(
+    func captureOutput(
         _ output: AVCaptureOutput,
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        Task { [weak self] in
-            await self?.appendFrame(from: sampleBuffer)
-        }
+        appendFrame(from: sampleBuffer)
     }
 }

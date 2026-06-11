@@ -10,11 +10,24 @@ enum VideoOrientationHelper {
     static func currentInterfaceOrientation() async -> UIInterfaceOrientation {
         // Always access UIApplication/UIScene on the main actor.
         return await MainActor.run { () -> UIInterfaceOrientation in
-            let scenes = UIApplication.shared.connectedScenes
-            let windowScenes = scenes.compactMap { $0 as? UIWindowScene }
-            let active = windowScenes.first { $0.activationState == .foregroundActive }
-            return (active ?? windowScenes.first)?.interfaceOrientation ?? .portrait
+            interfaceOrientationFromApplication()
         }
+    }
+
+    static func currentInterfaceOrientationSync() -> UIInterfaceOrientation {
+        if Thread.isMainThread {
+            return interfaceOrientationFromApplication()
+        }
+        return DispatchQueue.main.sync {
+            interfaceOrientationFromApplication()
+        }
+    }
+
+    private static func interfaceOrientationFromApplication() -> UIInterfaceOrientation {
+        let scenes = UIApplication.shared.connectedScenes
+        let windowScenes = scenes.compactMap { $0 as? UIWindowScene }
+        let active = windowScenes.first { $0.activationState == .foregroundActive }
+        return (active ?? windowScenes.first)?.interfaceOrientation ?? .portrait
     }
 
     /// Matches preview + recorded frames to how the user holds the phone.
@@ -56,6 +69,20 @@ enum VideoOrientationHelper {
         cameraPosition: AVCaptureDevice.Position
     ) async -> CGAffineTransform {
         let orientation = await currentInterfaceOrientation()
+        return writerTransform(
+            bufferWidth: bufferWidth,
+            bufferHeight: bufferHeight,
+            cameraPosition: cameraPosition,
+            orientation: orientation
+        )
+    }
+
+    static func writerTransform(
+        bufferWidth: Int,
+        bufferHeight: Int,
+        cameraPosition: AVCaptureDevice.Position,
+        orientation: UIInterfaceOrientation
+    ) -> CGAffineTransform {
         let width = CGFloat(bufferWidth)
         let height = CGFloat(bufferHeight)
         let isLandscapeBuffer = bufferWidth > bufferHeight
