@@ -13,7 +13,8 @@ final class SessionRecordingViewModel: ObservableObject {
     @Published var isRecording = false
     @Published var isExporting = false
     @Published var finalVideoURL: URL?
-    /// Persistent text-free slice for weekly/monthly recaps (set after export completes).
+    /// Persistent fallback video for this session. Initially a durable copy of the raw
+    /// clip, then replaced by the text-free clean slice if that export succeeds.
     @Published var rawClipURL: URL?
     @Published var previewFrames: [UIImage] = []
     @Published var cameraReady = false
@@ -192,6 +193,7 @@ final class SessionRecordingViewModel: ObservableObject {
                 self.retainedRawURL = rawURL
                 self.lastExportFrameCount = result.frameCount
                 self.previewFrames = Self.extractPreviewFrames(from: rawURL, count: 3)
+                self.rawClipURL = Self.copyRawClipToDurableStorage(rawURL)
                 self.didCaptureThisSession = false
                 self.statusMessage = "Ready to save"
                 self.startCleanSliceExport(from: rawURL)
@@ -235,6 +237,9 @@ final class SessionRecordingViewModel: ObservableObject {
                 guard let self else { return }
                 let isCurrentSlice = self.cleanSliceToken == token
                 if ok, isCurrentSlice {
+                    if let previous = self.rawClipURL, previous != sliceURL {
+                        try? FileManager.default.removeItem(at: previous)
+                    }
                     self.rawClipURL = sliceURL
                 } else {
                     try? FileManager.default.removeItem(at: sliceURL)
@@ -247,6 +252,20 @@ final class SessionRecordingViewModel: ObservableObject {
                 self.isCleanSliceExporting = false
                 self.cleanSliceRawURL = nil
             }
+        }
+    }
+
+    private static func copyRawClipToDurableStorage(_ rawURL: URL) -> URL? {
+        let fallbackURL = WrapStorage.newSessionSliceURL()
+        do {
+            if FileManager.default.fileExists(atPath: fallbackURL.path) {
+                try FileManager.default.removeItem(at: fallbackURL)
+            }
+            try FileManager.default.copyItem(at: rawURL, to: fallbackURL)
+            return fallbackURL
+        } catch {
+            print("SessionRecording: raw fallback copy failed – \(error.localizedDescription)")
+            return nil
         }
     }
 
@@ -310,7 +329,7 @@ final class SessionRecordingViewModel: ObservableObject {
         }
     }
 
-    static func extractPreviewFrames(from url: URL, count: Int) -> [UIImage] {
+    nonisolated static func extractPreviewFrames(from url: URL, count: Int) -> [UIImage] {
         guard count > 0 else { return [] }
 
         let asset = AVURLAsset(url: url)
@@ -349,7 +368,7 @@ final class SessionRecordingViewModel: ObservableObject {
         return Array(images.prefix(count))
     }
 
-    private static func previewFrameTimes(totalSeconds: Double, count: Int) -> [Double] {
+    nonisolated private static func previewFrameTimes(totalSeconds: Double, count: Int) -> [Double] {
         guard count > 1 else { return [0] }
         guard count > 2 else {
             return [0, Double.random(in: (totalSeconds * 0.55)...(totalSeconds * 0.95))]
@@ -360,7 +379,7 @@ final class SessionRecordingViewModel: ObservableObject {
         return [0, middle, late]
     }
 
-    private static func previewFrameFallbackTimes(totalSeconds: Double) -> [Double] {
+    nonisolated private static func previewFrameFallbackTimes(totalSeconds: Double) -> [Double] {
         let safeStart = min(max(totalSeconds * 0.02, 0.03), max(totalSeconds * 0.25, 0.03))
         return [
             0,
