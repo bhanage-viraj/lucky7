@@ -26,7 +26,50 @@ enum WrapRollupService {
 
         let sessions = (try? context.fetch(FetchDescriptor<Session>())) ?? []
         let wraps = (try? context.fetch(FetchDescriptor<PeriodWrap>())) ?? []
-        var doneKeys = Set(wraps.map { "\($0.kind)/\($0.periodKey)" })
+
+        // --- Repair pass (must run before the safety net below ever counts references).
+        // Older builds stored absolute paths; iOS rotates the container on every app
+        // update, so those went stale even though the files survived. Re-link whatever
+        // still resolves, rescue any wrap stuck in tmp, and drop recap rows whose video
+        // is gone for good (they regenerate below if their slices survived).
+        var repaired = false
+        for s in sessions {
+            if let stored = s.rawClipPath, let url = WrapStorage.resolveVideoURL(stored),
+               stored != url.lastPathComponent {
+                s.rawClipPath = url.lastPathComponent
+                repaired = true
+            }
+            if let stored = s.wrappedVideoPath, let url = WrapStorage.resolveVideoURL(stored) {
+                let name = url.lastPathComponent
+                if url.deletingLastPathComponent().path != WrapStorage.finalsDir.path {
+                    // pre-fix wrap still alive in tmp — move it somewhere durable before
+                    // iOS purges it (keep the name so every row pointing at it re-links)
+                    try? FileManager.default.moveItem(
+                        at: url, to: WrapStorage.finalsDir.appendingPathComponent(name)
+                    )
+                }
+                if stored != name {
+                    s.wrappedVideoPath = name
+                    repaired = true
+                }
+            }
+        }
+        var liveWraps: [PeriodWrap] = []
+        for w in wraps {
+            guard let url = WrapStorage.resolveVideoURL(w.videoPath) else {
+                context.delete(w)   // recap row without its video → dead rewind button
+                repaired = true
+                continue
+            }
+            if w.videoPath != url.lastPathComponent {
+                w.videoPath = url.lastPathComponent
+                repaired = true
+            }
+            liveWraps.append(w)
+        }
+        if repaired { try? context.save() }
+
+        var doneKeys = Set(liveWraps.map { "\($0.kind)/\($0.periodKey)" })
 
         let withClips = sessions.filter { WrapStorage.exists($0.rawClipPath) }
 
@@ -77,18 +120,33 @@ enum WrapRollupService {
         }
         if pruned { try? context.save() }
 
-        // Safety net: remove any slice file no session references (e.g. a session that
-        // exited before its path was recorded). Only touch files older than an hour so
-        // we never race an in-flight save.
-        let referenced = Set(sessions.compactMap { $0.rawClipPath })
+        // Safety net: remove files no session references (e.g. a session that exited
+        // before its path was recorded, or a re-titled export that got replaced).
+        // Match by FILENAME — stored values can still be stale absolute paths, and
+        // full-path matching after a container rotation would condemn every file.
+        // Only touch files older than an hour so we never race an in-flight save.
         let cutoff = now.addingTimeInterval(-3600)
-        if let files = try? FileManager.default.contentsOfDirectory(
-            at: WrapStorage.sessionsDir, includingPropertiesForKeys: [.creationDateKey]
-        ) {
-            for file in files where !referenced.contains(file.path) {
-                let created = (try? file.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? .distantPast
-                if created < cutoff { try? FileManager.default.removeItem(at: file) }
-            }
+        sweepUnreferenced(
+            dir: WrapStorage.sessionsDir,
+            keeping: Set(sessions.compactMap { $0.rawClipPath }.map { URL(fileURLWithPath: $0).lastPathComponent }),
+            cutoff: cutoff
+        )
+        sweepUnreferenced(
+            dir: WrapStorage.finalsDir,
+            keeping: Set(sessions.compactMap { $0.wrappedVideoPath }.map { URL(fileURLWithPath: $0).lastPathComponent }),
+            cutoff: cutoff
+        )
+    }
+
+    /// Deletes files in `dir` whose names nothing keeps, skipping anything newer than
+    /// `cutoff` (could be an export that hasn't been persisted to its session yet).
+    private static func sweepUnreferenced(dir: URL, keeping names: Set<String>, cutoff: Date) {
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: [.creationDateKey]
+        ) else { return }
+        for file in files where !names.contains(file.lastPathComponent) {
+            let created = (try? file.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? .distantPast
+            if created < cutoff { try? FileManager.default.removeItem(at: file) }
         }
     }
 
@@ -99,9 +157,7 @@ enum WrapRollupService {
     ) async -> Bool {
         let clips = sessions
             .sorted { $0.startTime < $1.startTime }
-            .compactMap { $0.rawClipPath }
-            .map { URL(fileURLWithPath: $0) }
-            .filter { FileManager.default.fileExists(atPath: $0.path) }
+            .compactMap { WrapStorage.resolveVideoURL($0.rawClipPath) }
         guard !clips.isEmpty else { return false }
 
         let totalFocus = sessions.reduce(0.0) { $0 + $1.actualDuration }
@@ -135,7 +191,7 @@ enum WrapRollupService {
 
         context.insert(PeriodWrap(
             kind: kind, periodKey: key, periodStart: start, periodEnd: end,
-            videoPath: outputURL.path, generatedAt: Date(),
+            videoPath: outputURL.lastPathComponent, generatedAt: Date(),
             sourceSessionCount: count, totalFocusSeconds: totalFocus
         ))
         try? context.save()

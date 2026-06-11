@@ -19,6 +19,7 @@ enum WrapStorage {
 
     static var sessionsDir: URL { ensure(root.appendingPathComponent("sessions", isDirectory: true)) }
     static var periodsDir: URL { ensure(root.appendingPathComponent("periods", isDirectory: true)) }
+    static var finalsDir: URL { ensure(root.appendingPathComponent("finals", isDirectory: true)) }
 
     @discardableResult
     private static func ensure(_ dir: URL) -> URL {
@@ -39,19 +40,44 @@ enum WrapStorage {
         sessionsDir.appendingPathComponent("\(UUID().uuidString).mp4")
     }
 
+    /// A fresh destination for a titled session wrap. Lives in Application Support, not
+    /// tmp — iOS purges tmp whenever it likes, which used to eat saved wraps.
+    static func newFinalURL() -> URL {
+        finalsDir.appendingPathComponent("wrapped_\(UUID().uuidString).mp4")
+    }
+
     /// The destination for a period recap (deterministic per period so re-runs overwrite).
     static func periodURL(kind: String, key: String) -> URL {
         periodsDir.appendingPathComponent("\(kind)_\(key).mp4")
     }
 
     static func delete(path: String?) {
-        guard let path else { return }
-        try? FileManager.default.removeItem(at: URL(fileURLWithPath: path))
+        guard let url = resolveVideoURL(path) else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 
     static func exists(_ path: String?) -> Bool {
-        guard let path else { return false }
-        return FileManager.default.fileExists(atPath: path)
+        resolveVideoURL(path) != nil
+    }
+
+    // MARK: - Path resolution
+
+    /// Stored video paths are bare filenames (new scheme) or absolute paths written by
+    /// older builds. Absolute paths go stale on every app update — iOS rotates the
+    /// container UUID and the old prefix dies, even though the files themselves are
+    /// migrated. So resolve by filename against every place a wrap video can live;
+    /// the UUID names make cross-directory collisions impossible.
+    static func resolveVideoURL(_ stored: String?) -> URL? {
+        guard let stored, !stored.isEmpty else { return nil }
+        let name = URL(fileURLWithPath: stored).lastPathComponent
+        let candidates = [
+            finalsDir.appendingPathComponent(name),
+            sessionsDir.appendingPathComponent(name),
+            periodsDir.appendingPathComponent(name),
+            FileManager.default.temporaryDirectory.appendingPathComponent(name),
+            URL(fileURLWithPath: stored)   // same-container absolute path (pre-update rows)
+        ]
+        return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     // MARK: - Period keys & labels (Calendar.current, matching the analytics screens)

@@ -14,7 +14,8 @@ final class PeriodWrap {
     var periodStart: Date
     /// Exclusive end (start of the next period). The period has "ended" once now >= periodEnd.
     var periodEnd: Date
-    /// Path to the stitched, texted recap video (persistent).
+    /// Filename of the stitched, texted recap video in Wraps/periods. Legacy rows hold
+    /// absolute paths — read through WrapStorage.resolveVideoURL.
     var videoPath: String?
     var generatedAt: Date
     var sourceSessionCount: Int

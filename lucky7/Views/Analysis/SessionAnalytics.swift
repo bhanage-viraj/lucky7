@@ -95,7 +95,7 @@ struct SessionAnalytics: View {
     }
 
     private var playableVideoURL: URL? {
-        existingFileURL(path: session?.wrappedVideoPath)
+        WrapStorage.resolveVideoURL(session?.wrappedVideoPath)
     }
 
     // MARK: - Body
@@ -466,8 +466,8 @@ struct SessionAnalytics: View {
     private func deleteSession() {
         if let session = session {
             // Free the video files this session left in app storage.
-            removeFile(session.wrappedVideoPath)
-            removeFile(session.rawClipPath)
+            WrapStorage.delete(path: session.wrappedVideoPath)
+            WrapStorage.delete(path: session.rawClipPath)
             // Remove the copy saved to the user's Photos library (iOS shows its own
             // confirmation). Older sessions saved before this won't have an id.
             if let assetId = session.photoAssetId {
@@ -477,21 +477,6 @@ struct SessionAnalytics: View {
             try? context.save()
         }
         close()
-    }
-
-    private func removeFile(_ path: String?) {
-        guard let path else { return }
-        try? FileManager.default.removeItem(atPath: path)
-    }
-
-    private func existingFileURL(path: String?) -> URL? {
-        guard let path, !path.isEmpty else { return nil }
-        return existingFileURL(URL(fileURLWithPath: path))
-    }
-
-    private func existingFileURL(_ url: URL?) -> URL? {
-        guard let url, FileManager.default.fileExists(atPath: url.path) else { return nil }
-        return url
     }
 
     /// Extracts a poster frame from the saved wrapped video when no live capture
