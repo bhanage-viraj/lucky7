@@ -205,10 +205,11 @@ final class SessionRecordingViewModel: ObservableObject {
                     return
                 }
 
-                self.retainedRawURL = rawURL
                 self.lastExportFrameCount = result.frameCount
                 self.previewFrames = Self.extractPreviewFrames(from: rawURL, count: 3)
-                self.rawClipURL = Self.copyRawClipToDurableStorage(rawURL)
+                let durableRawURL = Self.copyRawClipToDurableStorage(rawURL)
+                self.retainedRawURL = durableRawURL ?? rawURL
+                self.rawClipURL = durableRawURL
                 self.log("raw prepared previewFrames=\(self.previewFrames.count) fallback=\(self.rawClipURL?.lastPathComponent ?? "nil")")
                 self.didCaptureThisSession = false
                 self.statusMessage = "Ready to save"
@@ -254,7 +255,9 @@ final class SessionRecordingViewModel: ObservableObject {
                 guard let self else { return }
                 let isCurrentSlice = self.cleanSliceToken == token
                 if ok, isCurrentSlice {
-                    if let previous = self.rawClipURL, previous != sliceURL {
+                    if let previous = self.rawClipURL,
+                       previous != sliceURL,
+                       previous != self.retainedRawURL {
                         try? FileManager.default.removeItem(at: previous)
                     }
                     self.rawClipURL = sliceURL
@@ -294,6 +297,7 @@ final class SessionRecordingViewModel: ObservableObject {
         ScreenWakeLock.release()
         isRecording = false
         isExporting = false
+        let persistedRawURL = rawClipURL
         finalVideoURL = nil
         rawClipURL = nil
         let activeCleanSliceRawURL = cleanSliceRawURL
@@ -301,7 +305,9 @@ final class SessionRecordingViewModel: ObservableObject {
         isCleanSliceExporting = false
         cleanSliceRawURL = nil
         if let raw = retainedRawURL {
-            if activeCleanSliceRawURL == raw {
+            if persistedRawURL == raw {
+                log("resetForNewSession kept persisted raw=\(raw.lastPathComponent)")
+            } else if activeCleanSliceRawURL == raw {
                 rawURLsPendingDeletion.insert(raw)
             } else {
                 try? FileManager.default.removeItem(at: raw)
@@ -505,7 +511,7 @@ final class SessionRecordingViewModel: ObservableObject {
             return
         }
 
-        guard retainedRawURL != nil, lastExportFrameCount > 0 else {
+        guard exportSourceURL() != nil, lastExportFrameCount > 0 else {
             if isStoppingRecording {
                 isExporting = true
                 activeTitleExportTitle = exportTitle
@@ -592,8 +598,8 @@ final class SessionRecordingViewModel: ObservableObject {
         saveToPhotos: Bool,
         completions: [(URL?) -> Void]
     ) {
-        guard let raw = retainedRawURL, lastExportFrameCount > 0 else {
-            log("startTitleExport missing raw/frameCount final=\(finalVideoURL?.lastPathComponent ?? "nil")")
+        guard let raw = exportSourceURL(), lastExportFrameCount > 0 else {
+            log("startTitleExport missing raw/frameCount final=\(finalVideoURL?.lastPathComponent ?? "nil") raw=\(rawClipURL?.lastPathComponent ?? "nil") retained=\(retainedRawURL?.lastPathComponent ?? "nil")")
             completions.forEach { $0(finalVideoURL) }
             return
         }
@@ -670,6 +676,27 @@ final class SessionRecordingViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    private func exportSourceURL() -> URL? {
+        if let retainedRawURL, FileManager.default.fileExists(atPath: retainedRawURL.path) {
+            return retainedRawURL
+        }
+        if let rawClipURL, FileManager.default.fileExists(atPath: rawClipURL.path) {
+            retainedRawURL = rawClipURL
+            if lastExportFrameCount <= 0 {
+                lastExportFrameCount = Self.estimatedFrameCount(from: rawClipURL)
+            }
+            log("exportSource fallback raw=\(rawClipURL.lastPathComponent) frames=\(lastExportFrameCount)")
+            return rawClipURL
+        }
+        if let retainedRawURL {
+            log("exportSource missing retained path=\(retainedRawURL.lastPathComponent)")
+        }
+        if let rawClipURL {
+            log("exportSource missing raw path=\(rawClipURL.lastPathComponent)")
+        }
+        return nil
     }
 
     private func log(_ message: String) {
