@@ -102,6 +102,7 @@ struct WrappedVideoScreen: View {
             // global live export URL here; from History that can point at a
             // different, more recent session and share/play the wrong wrap.
             return WrapStorage.resolveVideoURL(session?.wrappedVideoPath)
+                ?? WrapStorage.resolveVideoURL(session?.rawClipPath)
         case .weekly, .monthly:
             return WrapStorage.resolveVideoURL(periodWrap?.videoPath)
         }

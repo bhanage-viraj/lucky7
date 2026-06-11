@@ -28,6 +28,8 @@ struct SessionDetails: View {
     @State private var showCamera = false
     @State private var showLibrary = false
     @State private var isSaving = false
+    @State private var showSaveError = false
+    @State private var saveErrorMessage = ""
     @State private var backgroundWrapTask: Task<Void, Never>?
 
     // Drives the darker "active" outline on whichever field is in use.
@@ -116,6 +118,11 @@ struct SessionDetails: View {
         }
         .onDisappear {
             backgroundWrapTask?.cancel()
+        }
+        .alert("Could not create wrap", isPresented: $showSaveError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(saveErrorMessage)
         }
     }
 
@@ -373,10 +380,22 @@ struct SessionDetails: View {
             exportTitle,
             durationSeconds: sessionDuration
         ) { finalURL in
-            if let finalURL,
-               let session = sessions.first(where: { $0.id == sessionId }) {
-                session.wrappedVideoPath = finalURL.lastPathComponent
+            if let session = sessions.first(where: { $0.id == sessionId }) {
+                if let finalURL {
+                    session.wrappedVideoPath = finalURL.lastPathComponent
+                }
+                if let rawName = sessionRecording.rawClipURL?.lastPathComponent {
+                    session.rawClipPath = rawName
+                }
                 try? context.save()
+            }
+
+            guard hasRecoverableVideo(finalURL: finalURL) else {
+                isSaving = false
+                saveErrorMessage = sessionRecording.lastError
+                    ?? "No video was captured for this session. Please try recording again and keep Rush Hour open until the camera preview is running."
+                showSaveError = true
+                return
             }
 
             Task {
@@ -390,6 +409,21 @@ struct SessionDetails: View {
                 }
             }
         }
+    }
+
+    private func hasRecoverableVideo(finalURL: URL?) -> Bool {
+        if let finalURL, FileManager.default.fileExists(atPath: finalURL.path) {
+            return true
+        }
+        if let rawURL = sessionRecording.rawClipURL,
+           FileManager.default.fileExists(atPath: rawURL.path) {
+            return true
+        }
+        guard let session = sessions.first(where: { $0.id == sessionId }) else {
+            return false
+        }
+        return WrapStorage.resolveVideoURL(session.wrappedVideoPath) != nil
+            || WrapStorage.resolveVideoURL(session.rawClipPath) != nil
     }
 }
 

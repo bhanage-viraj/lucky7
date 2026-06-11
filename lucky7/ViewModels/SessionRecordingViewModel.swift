@@ -85,6 +85,10 @@ final class SessionRecordingViewModel: ObservableObject {
         timelapseManager.stopRunning()
     }
 
+    func ensureCameraRunning() {
+        timelapseManager.startRunning()
+    }
+
     func startRecording(plannedSessionSeconds: TimeInterval, completion: ((Bool) -> Void)? = nil) {
         guard cameraReady else {
             lastError = "Camera is not ready yet."
@@ -131,6 +135,7 @@ final class SessionRecordingViewModel: ObservableObject {
     }
 
     func resumeRecording() {
+        timelapseManager.startRunning()
         timelapseManager.endPause()
         timelapseManager.capturePaused = false
         statusMessage = "Recording…"
