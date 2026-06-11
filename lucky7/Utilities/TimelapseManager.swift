@@ -29,7 +29,7 @@ final class TimelapseManager: NSObject {
     private var plannedSessionSeconds: TimeInterval = 3600
     private var captureIntervalSeconds: TimeInterval = 2
     private var isRecording = false
-    var capturePaused = false
+    private var capturePaused = false
     private var isWriterReady = false
     private var hasWrittenFrame = false
     private var recordingStartWallSeconds: Double?
@@ -87,6 +87,15 @@ final class TimelapseManager: NSObject {
         }
     }
 
+    func restartRunning() {
+        sessionQueue.async {
+            if self.session.isRunning {
+                self.session.stopRunning()
+            }
+            self.session.startRunning()
+        }
+    }
+
     func stopRunning() {
         sessionQueue.async {
             guard self.session.isRunning else { return }
@@ -96,18 +105,28 @@ final class TimelapseManager: NSObject {
 
     // MARK: - Recording
 
-    func beginPause() {
+    func pauseCapture() {
         writerQueue.async {
+            self.capturePaused = true
             guard self.pauseBeganWallSeconds == nil else { return }
             self.pauseBeganWallSeconds = self.currentWallElapsedSeconds()
         }
     }
 
-    func endPause() {
+    func resumeCapture() {
         writerQueue.async {
-            guard let began = self.pauseBeganWallSeconds else { return }
-            let end = self.currentWallElapsedSeconds()
-            self.totalPausedSeconds += max(0, end - began)
+            if let began = self.pauseBeganWallSeconds {
+                let end = self.currentWallElapsedSeconds()
+                self.totalPausedSeconds += max(0, end - began)
+                self.pauseBeganWallSeconds = nil
+            }
+            self.capturePaused = false
+        }
+    }
+
+    func resetCapturePause() {
+        writerQueue.async {
+            self.capturePaused = false
             self.pauseBeganWallSeconds = nil
         }
     }
@@ -148,53 +167,72 @@ final class TimelapseManager: NSObject {
     }
 
     func stopRecording(completion: @escaping (TimelapseStopResult) -> Void) {
+        let waitUntil = DispatchTime.now() + .milliseconds(1200)
         writerQueue.async {
-            guard self.isRecording else {
-                DispatchQueue.main.async {
-                    completion(TimelapseStopResult(url: nil, frameCount: 0))
-                }
-                return
+            self.finishRecording(waitUntil: waitUntil, completion: completion)
+        }
+    }
+
+    private func finishRecording(
+        waitUntil: DispatchTime,
+        completion: @escaping (TimelapseStopResult) -> Void
+    ) {
+        guard self.isRecording else {
+            DispatchQueue.main.async {
+                completion(TimelapseStopResult(url: nil, frameCount: 0))
             }
+            return
+        }
 
-            self.isRecording = false
-            let captured = self.framesCaptured
+        let hasUsableFrame = self.isWriterReady && self.hasWrittenFrame && self.framesCaptured > 0
+        if !self.capturePaused,
+           !hasUsableFrame,
+           DispatchTime.now().uptimeNanoseconds < waitUntil.uptimeNanoseconds {
+            self.startRunning()
+            self.writerQueue.asyncAfter(deadline: .now() + .milliseconds(150)) {
+                self.finishRecording(waitUntil: waitUntil, completion: completion)
+            }
+            return
+        }
 
-            guard let writer = self.assetWriter, self.isWriterReady, self.hasWrittenFrame, captured > 0 else {
-                print("TimelapseManager: no frames captured")
-                if let url = self.outputURL {
-                    try? FileManager.default.removeItem(at: url)
-                }
+        self.isRecording = false
+        let captured = self.framesCaptured
+
+        guard let writer = self.assetWriter, self.isWriterReady, self.hasWrittenFrame, captured > 0 else {
+            print("TimelapseManager: no frames captured")
+            if let url = self.outputURL {
+                try? FileManager.default.removeItem(at: url)
+            }
+            self.resetWriterState()
+            DispatchQueue.main.async {
+                completion(TimelapseStopResult(url: nil, frameCount: 0))
+            }
+            return
+        }
+
+        self.writerInput?.markAsFinished()
+
+        writer.finishWriting {
+            let success = writer.status == .completed
+            let url = success ? self.outputURL : nil
+            let duration = AppConstants.wrappedDurationSeconds(frameCount: captured)
+            if success {
+                print(
+                    String(
+                        format: "TimelapseManager: %d frames → %.1fs video @ %.0ffps",
+                        captured,
+                        duration,
+                        AppConstants.wrappedOutputFPS
+                    )
+                )
+            } else {
+                print("TimelapseManager: finishWriting failed – \(writer.error?.localizedDescription ?? "unknown")")
+            }
+            self.writerQueue.async {
+                self.lastCapturedFrameCount = captured
                 self.resetWriterState()
                 DispatchQueue.main.async {
-                    completion(TimelapseStopResult(url: nil, frameCount: 0))
-                }
-                return
-            }
-
-            self.writerInput?.markAsFinished()
-
-            writer.finishWriting {
-                let success = writer.status == .completed
-                let url = success ? self.outputURL : nil
-                let duration = AppConstants.wrappedDurationSeconds(frameCount: captured)
-                if success {
-                    print(
-                        String(
-                            format: "TimelapseManager: %d frames → %.1fs video @ %.0ffps",
-                            captured,
-                            duration,
-                            AppConstants.wrappedOutputFPS
-                        )
-                    )
-                } else {
-                    print("TimelapseManager: finishWriting failed – \(writer.error?.localizedDescription ?? "unknown")")
-                }
-                self.writerQueue.async {
-                    self.lastCapturedFrameCount = captured
-                    self.resetWriterState()
-                    DispatchQueue.main.async {
-                        completion(TimelapseStopResult(url: url, frameCount: captured))
-                    }
+                    completion(TimelapseStopResult(url: url, frameCount: captured))
                 }
             }
         }

@@ -128,18 +128,20 @@ final class SessionRecordingViewModel: ObservableObject {
     }
 
     func pauseRecording() {
-        timelapseManager.capturePaused = true
-        timelapseManager.beginPause()
+        timelapseManager.pauseCapture()
         statusMessage = "Recording paused"
         AccessibilitySupport.announce("Recording paused")
     }
 
     func resumeRecording() {
-        timelapseManager.startRunning()
-        timelapseManager.endPause()
-        timelapseManager.capturePaused = false
+        timelapseManager.restartRunning()
+        timelapseManager.resumeCapture()
         statusMessage = "Recording…"
         AccessibilitySupport.announce("Recording resumed")
+    }
+
+    func recoverCameraAfterInterruption() {
+        timelapseManager.restartRunning()
     }
 
     func stopRecordingAndExport(
@@ -282,7 +284,7 @@ final class SessionRecordingViewModel: ObservableObject {
         completedTitleExportTitle = nil
         completedTitleExportSavedToPhotos = false
         stopCompletions.removeAll()
-        timelapseManager.capturePaused = false
+        timelapseManager.resetCapturePause()
     }
 
     var wrappedDurationSeconds: TimeInterval {

@@ -403,7 +403,7 @@ struct RecordingPage: View {
             switch phase {
             case .active:
                 if hasStarted {
-                    sessionRecording.ensureCameraRunning()
+                    sessionRecording.recoverCameraAfterInterruption()
                 }
                 if sessionRecording.isRecording || sessionRecording.isExporting {
                     ScreenWakeLock.setActive(true)
