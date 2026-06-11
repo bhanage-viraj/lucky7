@@ -48,7 +48,17 @@ final class TimelapseManager: NSObject {
     func requestPermissionAndConfigure(completion: @escaping (Bool) -> Void) {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
-            configureSession(position: .front, completion: completion)
+            // Already configured? Just make sure it's running. prepareCamera() fires on
+            // every return to foreground — rebuilding here would glitch an in-flight
+            // recording and snap a back-camera pick back to the front camera.
+            sessionQueue.async {
+                if self.session.inputs.isEmpty {
+                    self.configureSession(position: .front, completion: completion)
+                } else {
+                    if !self.session.isRunning { self.session.startRunning() }
+                    DispatchQueue.main.async { completion(true) }
+                }
+            }
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { granted in
                 if granted {

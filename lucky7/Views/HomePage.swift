@@ -167,7 +167,9 @@ struct HomePage: View {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
-                if isActiveTab { sessionRecording.prepareCamera() }
+                // Mid-session the camera is already live — only warm it up for the idle
+                // home preview, never underneath a recording.
+                if isActiveTab && !sessionActive { sessionRecording.prepareCamera() }
             case .background, .inactive:
                 stopPreviewIfIdle()
             @unknown default:
