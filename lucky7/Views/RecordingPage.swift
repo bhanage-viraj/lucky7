@@ -402,6 +402,9 @@ struct RecordingPage: View {
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
+                if hasStarted {
+                    sessionRecording.ensureCameraRunning()
+                }
                 if sessionRecording.isRecording || sessionRecording.isExporting {
                     ScreenWakeLock.setActive(true)
                 }

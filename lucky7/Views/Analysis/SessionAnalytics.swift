@@ -96,6 +96,7 @@ struct SessionAnalytics: View {
 
     private var playableVideoURL: URL? {
         WrapStorage.resolveVideoURL(session?.wrappedVideoPath)
+            ?? WrapStorage.resolveVideoURL(session?.rawClipPath)
     }
 
     // MARK: - Body
