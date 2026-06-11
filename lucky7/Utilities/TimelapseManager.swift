@@ -500,7 +500,7 @@ final class TimelapseManager: NSObject {
     }
 
     private func log(_ message: String) {
-        print("RH_REC Timelapse \(message)")
+        RecordingDiagnostics.log("Timelapse \(message)")
     }
 }
 

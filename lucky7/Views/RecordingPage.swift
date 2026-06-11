@@ -848,7 +848,7 @@ struct RecordingPage: View {
     }
 
     private func recLog(_ message: String) {
-        print("RH_REC RecordingPage \(message)")
+        RecordingDiagnostics.log("RecordingPage \(message)")
     }
 }
 

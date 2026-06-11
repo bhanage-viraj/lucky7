@@ -12,6 +12,11 @@ struct Loading: View {
     @State private var showHome = false
     @State private var selectedTab = 0
     @StateObject private var tabBarVisibility = TabBarVisibility()
+    @State private var pendingRecoverySession: PendingRecoverySession?
+
+    private struct PendingRecoverySession: Identifiable {
+        let id: UUID
+    }
 
     init() {
         // Dark tab bar only — without forcing the whole app into dark mode.
@@ -60,9 +65,25 @@ struct Loading: View {
                     }
                 }
                 .environment(\.tabBarVisibility, tabBarVisibility)
-                .onAppear { UIApplication.shared.enableTapToDismissKeyboard() }
+                .onAppear {
+                    UIApplication.shared.enableTapToDismissKeyboard()
+                    loadPendingRecoveryIfNeeded()
+                }
                 .onReceive(NotificationCenter.default.publisher(for: .returnToHomeTab)) { _ in
                     withAnimation(.easeInOut(duration: 0.2)) { selectedTab = 0 }
+                }
+                .fullScreenCover(item: $pendingRecoverySession) { recovery in
+                    SessionDetails(
+                        sessionId: recovery.id,
+                        onSave: {
+                            SessionEndRecovery.clear(recovery.id)
+                            pendingRecoverySession = nil
+                        },
+                        onFlowComplete: {
+                            SessionEndRecovery.clear(recovery.id)
+                            pendingRecoverySession = nil
+                        }
+                    )
                 }
             } else {
 //                AppBlockOnboardingScreen(onDone: {
@@ -117,9 +138,17 @@ struct Loading: View {
                     withAnimation(.easeInOut) {
                         showHome = true
                     }
+                    loadPendingRecoveryIfNeeded()
                 }
             }
         }
+    }
+
+    private func loadPendingRecoveryIfNeeded() {
+        guard didShowOnboarding, pendingRecoverySession == nil else { return }
+        guard let id = SessionEndRecovery.pendingSessionID else { return }
+        RecordingDiagnostics.log("Loading present pending recovery session=\(id)")
+        pendingRecoverySession = PendingRecoverySession(id: id)
     }
 }
 

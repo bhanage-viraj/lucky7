@@ -111,7 +111,7 @@ struct FinishSessionScreen: View {
         if let session = try? context.fetch(descriptor).first {
             session.wrappedVideoPath = name
             try? context.save()
-            print("RH_REC FinishSession persist wrapped session=\(sessionId) path=\(name)")
+            RecordingDiagnostics.log("FinishSession persist wrapped session=\(sessionId) path=\(name)")
         }
     }
 
@@ -122,7 +122,7 @@ struct FinishSessionScreen: View {
         if let session = try? context.fetch(descriptor).first {
             session.rawClipPath = name
             try? context.save()
-            print("RH_REC FinishSession persist raw session=\(sessionId) path=\(name)")
+            RecordingDiagnostics.log("FinishSession persist raw session=\(sessionId) path=\(name)")
         }
     }
 
@@ -217,12 +217,14 @@ struct FinishSessionScreen: View {
         )
         context.insert(session)
         sessionId = id
-        print("RH_REC FinishSession create session=\(id) wrapped=\(session.wrappedVideoPath ?? "nil") raw=\(session.rawClipPath ?? "nil")")
+        SessionEndRecovery.markPending(id)
+        RecordingDiagnostics.log("FinishSession create session=\(id) wrapped=\(session.wrappedVideoPath ?? "nil") raw=\(session.rawClipPath ?? "nil")")
     }
 
     private func completeFlow() {
         guard !hasCompletedFlow else { return }
         hasCompletedFlow = true
+        SessionEndRecovery.clear(sessionId)
         onFlowComplete()
     }
 }

@@ -281,10 +281,10 @@ final class SessionRecordingViewModel: ObservableObject {
                 try FileManager.default.removeItem(at: fallbackURL)
             }
             try FileManager.default.copyItem(at: rawURL, to: fallbackURL)
-            print("RH_REC SessionRecording raw fallback copied from=\(rawURL.lastPathComponent) to=\(fallbackURL.lastPathComponent)")
+            RecordingDiagnostics.log("SessionRecording raw fallback copied from=\(rawURL.lastPathComponent) to=\(fallbackURL.lastPathComponent)")
             return fallbackURL
         } catch {
-            print("RH_REC SessionRecording raw fallback copy failed error=\(error.localizedDescription)")
+            RecordingDiagnostics.log("SessionRecording raw fallback copy failed error=\(error.localizedDescription)")
             return nil
         }
     }
@@ -325,6 +325,31 @@ final class SessionRecordingViewModel: ObservableObject {
         completedTitleExportSavedToPhotos = false
         stopCompletions.removeAll()
         timelapseManager.resetCapturePause()
+    }
+
+    func restoreExportContext(rawURL: URL?, finalURL: URL?) {
+        guard !isRecording, !isStoppingRecording else {
+            log("restoreExportContext skipped while recording")
+            return
+        }
+
+        if let rawURL, FileManager.default.fileExists(atPath: rawURL.path) {
+            retainedRawURL = rawURL
+            rawClipURL = rawURL
+            lastExportFrameCount = Self.estimatedFrameCount(from: rawURL)
+            if previewFrames.isEmpty {
+                previewFrames = Self.extractPreviewFrames(from: rawURL, count: 3)
+            }
+            log("restoreExportContext raw=\(rawURL.lastPathComponent) frames=\(lastExportFrameCount) previews=\(previewFrames.count)")
+        }
+
+        if let finalURL, FileManager.default.fileExists(atPath: finalURL.path) {
+            finalVideoURL = finalURL
+            if previewFrames.isEmpty {
+                previewFrames = Self.extractPreviewFrames(from: finalURL, count: 3)
+            }
+            log("restoreExportContext final=\(finalURL.lastPathComponent) previews=\(previewFrames.count)")
+        }
     }
 
     var wrappedDurationSeconds: TimeInterval {
@@ -387,6 +412,13 @@ final class SessionRecordingViewModel: ObservableObject {
         }
 
         return Array(images.prefix(count))
+    }
+
+    nonisolated static func estimatedFrameCount(from url: URL) -> Int {
+        let asset = AVURLAsset(url: url)
+        let durationSeconds = CMTimeGetSeconds(asset.duration)
+        guard durationSeconds.isFinite, durationSeconds > 0 else { return 1 }
+        return max(1, Int((durationSeconds * AppConstants.wrappedOutputFPS).rounded()))
     }
 
     nonisolated private static func previewFrameTimes(totalSeconds: Double, count: Int) -> [Double] {
@@ -641,6 +673,6 @@ final class SessionRecordingViewModel: ObservableObject {
     }
 
     private func log(_ message: String) {
-        print("RH_REC SessionRecording \(message)")
+        RecordingDiagnostics.log("SessionRecording \(message)")
     }
 }
