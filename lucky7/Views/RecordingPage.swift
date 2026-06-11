@@ -425,10 +425,13 @@ struct RecordingPage: View {
                 let shouldNudgeAway = hasStarted && sessionRecording.isRecording
                 // left the app → pause the session instead of letting it silently freeze and
                 // auto-resume; the button flips to RESUME so you pick back up deliberately
-                if hasStarted && sessionTimer.isRunning {
-                    sessionTimer.pause()
-                    sessionRecording.pauseRecording()
-                    pausedByBackground = true
+                if hasStarted {
+                    if sessionTimer.isRunning {
+                        sessionTimer.pause()
+                        sessionRecording.pauseRecording()
+                        pausedByBackground = true
+                    }
+                    sessionRecording.stopCamera()
                 }
                 #if os(iOS)
                 // away from a paused session (and not on a break) → ping them to come back

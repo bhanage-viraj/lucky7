@@ -32,7 +32,7 @@ final class TimelapseManager: NSObject {
     var capturePaused = false
     private var isWriterReady = false
     private var hasWrittenFrame = false
-    private var recordingStartTime: CMTime?
+    private var recordingStartWallSeconds: Double?
     private var totalPausedSeconds: Double = 0
     private var pauseBeganWallSeconds: Double?
 
@@ -98,21 +98,14 @@ final class TimelapseManager: NSObject {
     func beginPause() {
         writerQueue.async {
             guard self.pauseBeganWallSeconds == nil else { return }
-            if let pts = self.lastSamplePTS {
-                self.pauseBeganWallSeconds = self.currentWallElapsedSeconds(at: pts)
-            }
+            self.pauseBeganWallSeconds = self.currentWallElapsedSeconds()
         }
     }
 
     func endPause() {
         writerQueue.async {
             guard let began = self.pauseBeganWallSeconds else { return }
-            let end: Double
-            if let pts = self.lastSamplePTS {
-                end = self.currentWallElapsedSeconds(at: pts)
-            } else {
-                end = began
-            }
+            let end = self.currentWallElapsedSeconds()
             self.totalPausedSeconds += max(0, end - began)
             self.pauseBeganWallSeconds = nil
         }
@@ -206,8 +199,6 @@ final class TimelapseManager: NSObject {
 
     // MARK: - Private
 
-    private var lastSamplePTS: CMTime?
-
     private func configureSession(position: AVCaptureDevice.Position, completion: ((Bool) -> Void)?) {
         sessionQueue.async {
             self.session.beginConfiguration()
@@ -276,10 +267,9 @@ final class TimelapseManager: NSObject {
         hasWrittenFrame = false
         cameraFrameIndex = 0
         framesCaptured = 0
-        recordingStartTime = nil
+        recordingStartWallSeconds = nil
         totalPausedSeconds = 0
         pauseBeganWallSeconds = nil
-        lastSamplePTS = nil
     }
 
     private static func makeOutputURL(suffix: String) -> URL? {
@@ -287,10 +277,9 @@ final class TimelapseManager: NSObject {
         return FileManager.default.temporaryDirectory.appendingPathComponent(name)
     }
 
-    private func currentWallElapsedSeconds(at timestamp: CMTime) -> Double {
-        guard let start = recordingStartTime else { return 0 }
-        let elapsed = CMTimeGetSeconds(CMTimeSubtract(timestamp, start))
-        return max(0, elapsed - totalPausedSeconds)
+    private func currentWallElapsedSeconds(now: Double = ProcessInfo.processInfo.systemUptime) -> Double {
+        guard let start = recordingStartWallSeconds else { return 0 }
+        return max(0, now - start - totalPausedSeconds)
     }
 
     private func shouldCaptureFrame(wallElapsed: Double) -> Bool {
@@ -348,7 +337,7 @@ final class TimelapseManager: NSObject {
         writerInput = input
         pixelBufferAdaptor = adaptor
         isWriterReady = true
-        recordingStartTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        recordingStartWallSeconds = ProcessInfo.processInfo.systemUptime
         return true
     }
 
@@ -357,9 +346,6 @@ final class TimelapseManager: NSObject {
         guard writer.status != .failed else { return }
 
         cameraFrameIndex += 1
-        let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        lastSamplePTS = timestamp
-
         if !isWriterReady {
             guard await setupWriterIfNeeded(from: sampleBuffer) else { return }
         }
@@ -369,7 +355,7 @@ final class TimelapseManager: NSObject {
               input.isReadyForMoreMediaData,
               let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
-        let wallElapsed = currentWallElapsedSeconds(at: timestamp)
+        let wallElapsed = currentWallElapsedSeconds()
         guard shouldCaptureFrame(wallElapsed: wallElapsed) else { return }
 
         let presentationTime = outputPresentationTime(forFrameIndex: framesCaptured)
