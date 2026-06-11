@@ -23,6 +23,9 @@ final class TimelapseManager: NSObject {
     private var assetWriter: AVAssetWriter?
     private var writerInput: AVAssetWriterInput?
     private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+    private lazy var sampleBufferDelegate = TimelapseSampleBufferDelegate { [weak self] sampleBuffer in
+        self?.appendFrame(from: sampleBuffer)
+    }
 
     private var cameraFrameIndex = 0
     private var framesCaptured = 0
@@ -266,7 +269,7 @@ final class TimelapseManager: NSObject {
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
             ]
             output.alwaysDiscardsLateVideoFrames = true
-            output.setSampleBufferDelegate(self, queue: self.writerQueue)
+            output.setSampleBufferDelegate(self.sampleBufferDelegate, queue: self.writerQueue)
 
             guard self.session.canAddOutput(output) else {
                 self.session.commitConfiguration()
@@ -413,12 +416,18 @@ final class TimelapseManager: NSObject {
     }
 }
 
-extension TimelapseManager: AVCaptureVideoDataOutputSampleBufferDelegate {
-    func captureOutput(
+private final class TimelapseSampleBufferDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+    nonisolated(unsafe) private let onSampleBuffer: (CMSampleBuffer) -> Void
+
+    init(onSampleBuffer: @escaping (CMSampleBuffer) -> Void) {
+        self.onSampleBuffer = onSampleBuffer
+    }
+
+    nonisolated func captureOutput(
         _ output: AVCaptureOutput,
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        appendFrame(from: sampleBuffer)
+        onSampleBuffer(sampleBuffer)
     }
 }
