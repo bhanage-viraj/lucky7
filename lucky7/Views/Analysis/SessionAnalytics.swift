@@ -65,19 +65,26 @@ struct SessionAnalytics: View {
         TimeFormatter.shortDuration(seconds)
     }
 
+    private var durationBreakdown: (whole: Int, focus: Int, distracted: Int) {
+        let whole = max(0, Int((session?.actualDuration ?? 0).rounded()))
+        let distracted = min(
+            whole,
+            max(0, Int(distractionStat.totalDistractionDuration.rounded()))
+        )
+        let focus = max(whole - distracted, 0)
+        return (whole, focus, distracted)
+    }
+
     private var wholeSessionText: String {
-        formatDuration(session?.actualDuration ?? 0)
+        formatDuration(TimeInterval(durationBreakdown.whole))
     }
 
     private var focusDurationText: String {
-        let actual = session?.actualDuration ?? 0
-        let distracted = min(distractionStat.totalDistractionDuration, actual)
-        return formatDuration(max(actual - distracted, 0))
+        formatDuration(TimeInterval(durationBreakdown.focus))
     }
 
     private var distractedDurationText: String {
-        let actual = session?.actualDuration ?? 0
-        return formatDuration(min(distractionStat.totalDistractionDuration, actual))
+        formatDuration(TimeInterval(durationBreakdown.distracted))
     }
 
     private var dateText: String {
