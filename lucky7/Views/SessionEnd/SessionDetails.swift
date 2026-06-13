@@ -65,9 +65,7 @@ struct SessionDetails: View {
     }
 
     private var canSave: Bool {
-        !sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-        !sessionDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-        !uploadedSnapshots.isEmpty
+        !sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func addSnapshot(_ image: UIImage) {
@@ -139,7 +137,7 @@ struct SessionDetails: View {
                     .foregroundColor(.black)
                     .multilineTextAlignment(.center)
 
-                LabeledField(title: "TITLE") {
+                LabeledField(title: "TITLE", isRequired: true) {
                     TextField("", text: $sessionTitle)
                         .font(.system(size: 15))
                         .foregroundColor(.black)
@@ -332,7 +330,7 @@ struct SessionDetails: View {
         if isSaving {
             return "Please wait while Rush Hour generates and saves your wrap"
         }
-        return canSave ? "Saves your session details and exports the session video" : "Add a title, description, or snapshot to save"
+        return canSave ? "Saves your session details and exports the session video" : "Add a title to save"
     }
 
     private var exportTitle: String {
@@ -536,18 +534,26 @@ struct PatternBorderedCard<Content: View>: View {
 /// A left-aligned uppercase label sitting above a form control.
 struct LabeledField<Content: View>: View {
     let title: String
+    var isRequired: Bool
     let content: Content
 
-    init(title: String, @ViewBuilder content: () -> Content) {
+    init(title: String, isRequired: Bool = false, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.isRequired = isRequired
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.custom("Special Gothic Expanded One", size: 11))
-                .foregroundColor(.black)
+            HStack(spacing: 2) {
+                Text(title)
+                if isRequired {
+                    Text("*")
+                        .accessibilityLabel("required")
+                }
+            }
+            .font(.custom("Special Gothic Expanded One", size: 11))
+            .foregroundColor(.black)
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
