@@ -659,3 +659,4 @@ private struct HomeTimeDial: View {
         .environmentObject(SessionTimerViewModel())
         .environmentObject(SessionRecordingViewModel())
 }
+

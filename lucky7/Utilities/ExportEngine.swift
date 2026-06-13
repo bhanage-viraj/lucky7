@@ -128,6 +128,82 @@ final class ExportEngine {
         }
     }
 
+    // MARK: - Raw segment stitching (background-interrupted recordings)
+
+    /// Concatenates the per-segment raw clips a recording produced when it was interrupted by
+    /// app-background into ONE continuous raw clip, preserving the camera orientation. Passthrough
+    /// (no re-encode) since every segment came from the same capture config. Returns the stitched
+    /// URL + its measured duration so the caller can recompute a matching frame count.
+    func concatenateRawSegments(_ urls: [URL]) async -> (url: URL, durationSeconds: Double)? {
+        guard !urls.isEmpty else { return nil }
+
+        let composition = AVMutableComposition()
+        guard let track = composition.addMutableTrack(
+            withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid
+        ) else { return nil }
+
+        var cursor = CMTime.zero
+        var preferredTransform: CGAffineTransform?
+        for url in urls {
+            let asset = AVURLAsset(url: url)
+            do {
+                guard let src = try await asset.loadTracks(withMediaType: .video).first else { continue }
+                let dur = try await asset.load(.duration)
+                guard CMTimeGetSeconds(dur) > 0 else { continue }
+                try track.insertTimeRange(CMTimeRange(start: .zero, duration: dur), of: src, at: cursor)
+                cursor = CMTimeAdd(cursor, dur)
+                if preferredTransform == nil {
+                    preferredTransform = try? await src.load(.preferredTransform)
+                }
+            } catch {
+                print("ExportEngine.concatenateRawSegments insert: \(error.localizedDescription)")
+                continue
+            }
+        }
+        guard cursor > .zero else { return nil }
+        if let preferredTransform { track.preferredTransform = preferredTransform }
+
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("timelapse_stitched_\(UUID().uuidString).mp4")
+        if FileManager.default.fileExists(atPath: outputURL.path) {
+            try? FileManager.default.removeItem(at: outputURL)
+        }
+
+        guard let session = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough) else {
+            return nil
+        }
+        session.outputURL = outputURL
+        session.outputFileType = .mp4
+        session.shouldOptimizeForNetworkUse = true
+        await session.export()
+
+        guard session.status == .completed else {
+            print("ExportEngine.concatenateRawSegments export failed: \(session.error?.localizedDescription ?? "unknown")")
+            try? FileManager.default.removeItem(at: outputURL)
+            return nil
+        }
+
+        let stitchedSeconds = (try? await AVURLAsset(url: outputURL).load(.duration))
+            .map { CMTimeGetSeconds($0) } ?? CMTimeGetSeconds(cursor)
+        return (outputURL, stitchedSeconds)
+    }
+
+    /// Fallback when stitching fails: the single longest segment (most footage we can salvage),
+    /// with its measured duration so the caller can derive a matching frame count.
+    func longestSegment(_ urls: [URL]) async -> (url: URL, durationSeconds: Double)? {
+        var best: URL?
+        var bestSeconds = -1.0
+        for url in urls {
+            let seconds = (try? await AVURLAsset(url: url).load(.duration)).map { CMTimeGetSeconds($0) } ?? 0
+            if seconds > bestSeconds {
+                bestSeconds = seconds
+                best = url
+            }
+        }
+        guard let best, bestSeconds > 0 else { return nil }
+        return (best, bestSeconds)
+    }
+
     // MARK: - Period recaps (weekly / monthly)
 
     /// Produces a short, TEXT-FREE, portrait-normalised (1080×1920) slice of a raw
