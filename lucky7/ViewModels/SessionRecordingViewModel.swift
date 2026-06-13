@@ -126,7 +126,7 @@ final class SessionRecordingViewModel: ObservableObject {
                     ScreenWakeLock.setActive(true)
                     AccessibilitySupport.announce("Recording started")
                 } else {
-                    self.lastError = "Could not start recording."
+                    self.lastError = "Could not start recording. Keep the camera preview open and try again."
                     self.statusMessage = nil
                     self.log("startRecording failed from timelapse")
                 }

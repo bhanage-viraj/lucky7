@@ -32,6 +32,7 @@ struct RecordingPage: View {
     @State private var hasStarted = false
     @State private var isStartingSession = false
     @State private var showEndConfirm = false
+    @State private var showFinishSessionFlow = false
     @State private var showCrashSession = false
     @State private var showNotifNudge = false
     @Environment(\.scenePhase) private var scenePhase
@@ -451,7 +452,10 @@ struct RecordingPage: View {
         }
         .onChange(of: sessionTimer.showFinishSession) { _, show in
             if show {
-                finalizeRecording()
+                sessionTimer.showFinishSession = false
+                finalizeRecording {
+                    showFinishSessionFlow = true
+                }
                 SessionNotifications.cancelAwayNudges()
                 #if os(iOS)
                 focusController.release()   // timer hit 00:00 — lift the shield + tear down the break Live Activity now, not after the recap
@@ -464,7 +468,7 @@ struct RecordingPage: View {
             exitToHomeFromSessionFlow()
         }
 
-        .fullScreenCover(isPresented: $sessionTimer.showFinishSession) {
+        .fullScreenCover(isPresented: $showFinishSessionFlow) {
             FinishSessionScreen(onFlowComplete: exitToHomeFromSessionFlow)
         }
         .fullScreenCover(isPresented: $showCrashSession) {
@@ -754,6 +758,7 @@ struct RecordingPage: View {
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
+            showFinishSessionFlow = false
             showCrashSession = false
             isExpanded = false
             sessionTimer.showFinishSession = false

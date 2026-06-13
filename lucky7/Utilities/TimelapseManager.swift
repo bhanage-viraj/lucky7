@@ -43,6 +43,7 @@ final class TimelapseManager: NSObject {
     private var loggedNotRecordingDrop = false
     private var loggedPausedDrop = false
     private var loggedMissingWriterDrop = false
+    private var pendingStartCompletion: ((Bool) -> Void)?
 
     private(set) var outputURL: URL?
     private(set) var lastCapturedFrameCount = 0
@@ -177,9 +178,19 @@ final class TimelapseManager: NSObject {
                 let writer = try AVAssetWriter(outputURL: self.outputURL!, fileType: .mp4)
                 self.assetWriter = writer
                 self.isRecording = true
+                self.pendingStartCompletion = completion
                 self.startRunning()
                 self.log("startRecording ok raw=\(self.outputURL!.lastPathComponent) interval=\(String(format: "%.3f", self.captureIntervalSeconds))")
-                DispatchQueue.main.async { completion?(true) }
+                self.writerQueue.asyncAfter(deadline: .now() + .seconds(4)) {
+                    guard self.isRecording, self.framesCaptured == 0, self.pendingStartCompletion != nil else { return }
+                    self.log("startRecording failed first-frame timeout samples=\(self.sampleBuffersReceived) writerReady=\(self.isWriterReady)")
+                    if let url = self.outputURL {
+                        try? FileManager.default.removeItem(at: url)
+                    }
+                    self.isRecording = false
+                    self.finishStartCompletion(false)
+                    self.resetWriterState()
+                }
             } catch {
                 self.log("startRecording failed writer error=\(error.localizedDescription)")
                 self.isRecording = false
@@ -200,6 +211,7 @@ final class TimelapseManager: NSObject {
         completion: @escaping (TimelapseStopResult) -> Void
     ) {
         guard self.isRecording else {
+            self.finishStartCompletion(false)
             DispatchQueue.main.async {
                 completion(TimelapseStopResult(url: nil, frameCount: 0))
             }
@@ -230,6 +242,7 @@ final class TimelapseManager: NSObject {
             if let url = self.outputURL {
                 try? FileManager.default.removeItem(at: url)
             }
+            self.finishStartCompletion(false)
             self.resetWriterState()
             DispatchQueue.main.async {
                 completion(TimelapseStopResult(url: nil, frameCount: 0))
@@ -348,6 +361,7 @@ final class TimelapseManager: NSObject {
         recordingStartWallSeconds = nil
         totalPausedSeconds = 0
         pauseBeganWallSeconds = nil
+        pendingStartCompletion = nil
     }
 
     private static func makeOutputURL(suffix: String) -> URL? {
@@ -494,8 +508,19 @@ final class TimelapseManager: NSObject {
 
         framesCaptured += 1
         hasWrittenFrame = true
+        if framesCaptured == 1 {
+            finishStartCompletion(true)
+        }
         if framesCaptured <= 3 || framesCaptured == 10 || framesCaptured % 60 == 0 {
             log("frame appended captured=\(framesCaptured) samples=\(sampleBuffersReceived)")
+        }
+    }
+
+    private func finishStartCompletion(_ started: Bool) {
+        guard let completion = pendingStartCompletion else { return }
+        pendingStartCompletion = nil
+        DispatchQueue.main.async {
+            completion(started)
         }
     }
 
