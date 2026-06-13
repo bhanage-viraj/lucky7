@@ -233,6 +233,8 @@ struct SessionAnalytics: View {
         Image(systemName: "square.and.arrow.up")
             .font(.system(size: 20, weight: .semibold))
             .foregroundColor(.white)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
             .opacity(session == nil ? 0.45 : 1)
             .accessibilityLabel("Share session analytics")
             .accessibilityHint("Opens sharing options for this session analytics")

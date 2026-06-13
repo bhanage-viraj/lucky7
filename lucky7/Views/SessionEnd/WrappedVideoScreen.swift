@@ -194,7 +194,10 @@ struct WrappedVideoScreen: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 20, weight: .bold))
                     .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             .accessibilityLabel("Back")
             .accessibilityInputLabels(["back", "go back"])
 
@@ -220,6 +223,8 @@ struct WrappedVideoScreen: View {
         Image(systemName: "square.and.arrow.up")
             .font(.system(size: 20, weight: .semibold))
             .foregroundColor(.white)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
             .opacity(shareableVideoURL == nil ? 0.45 : 1)
             .accessibilityLabel("Share video")
             .accessibilityHint(
