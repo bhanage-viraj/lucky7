@@ -26,6 +26,17 @@ final class Distraction: Identifiable {
         startTime.intervalInSeconds(to: endTime ?? Date())
     }
 
+    func duration(overlapping session: Session) -> TimeInterval {
+        let sessionEnd = session.endTime ?? Date()
+        return durationClamped(toStart: session.startTime, end: sessionEnd)
+    }
+
+    func durationClamped(toStart windowStart: Date, end windowEnd: Date) -> TimeInterval {
+        let effectiveStart = max(startTime, windowStart)
+        let effectiveEnd = min(endTime ?? windowEnd, windowEnd)
+        return max(effectiveEnd.timeIntervalSince(effectiveStart), 0)
+    }
+
     var isBreakActive: Bool {
         guard let until = breakGrantedUntil else { return false }
         return until > .now

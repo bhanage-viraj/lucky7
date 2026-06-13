@@ -71,12 +71,13 @@ struct SessionAnalytics: View {
 
     private var focusDurationText: String {
         let actual = session?.actualDuration ?? 0
-        let distracted = distractionStat.totalDistractionDuration
+        let distracted = min(distractionStat.totalDistractionDuration, actual)
         return formatDuration(max(actual - distracted, 0))
     }
 
     private var distractedDurationText: String {
-        formatDuration(distractionStat.totalDistractionDuration)
+        let actual = session?.actualDuration ?? 0
+        return formatDuration(min(distractionStat.totalDistractionDuration, actual))
     }
 
     private var dateText: String {
@@ -169,7 +170,11 @@ struct SessionAnalytics: View {
         .toolbar(.hidden, for: .navigationBar)
         .hidesFloatingTabBar()
         .onAppear {
-            distractionStat.fetchDistractions(for: sessionId, context: context)
+            if let session {
+                distractionStat.fetchDistractions(for: session, context: context)
+            } else {
+                distractionStat.fetchDistractions(for: sessionId, context: context)
+            }
             logVideoResolution()
         }
         .task(id: sessionId) {
