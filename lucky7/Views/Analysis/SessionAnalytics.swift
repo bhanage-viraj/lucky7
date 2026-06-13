@@ -65,18 +65,26 @@ struct SessionAnalytics: View {
         TimeFormatter.shortDuration(seconds)
     }
 
+    private var durationBreakdown: (whole: Int, focus: Int, distracted: Int) {
+        let whole = max(0, Int((session?.actualDuration ?? 0).rounded()))
+        let distracted = min(
+            whole,
+            max(0, Int(distractionStat.totalDistractionDuration.rounded()))
+        )
+        let focus = max(whole - distracted, 0)
+        return (whole, focus, distracted)
+    }
+
     private var wholeSessionText: String {
-        formatDuration(session?.actualDuration ?? 0)
+        formatDuration(TimeInterval(durationBreakdown.whole))
     }
 
     private var focusDurationText: String {
-        let actual = session?.actualDuration ?? 0
-        let distracted = distractionStat.totalDistractionDuration
-        return formatDuration(max(actual - distracted, 0))
+        formatDuration(TimeInterval(durationBreakdown.focus))
     }
 
     private var distractedDurationText: String {
-        formatDuration(distractionStat.totalDistractionDuration)
+        formatDuration(TimeInterval(durationBreakdown.distracted))
     }
 
     private var dateText: String {
@@ -97,6 +105,16 @@ struct SessionAnalytics: View {
     private var playableVideoURL: URL? {
         WrapStorage.resolveVideoURL(session?.wrappedVideoPath)
             ?? WrapStorage.resolveVideoURL(session?.rawClipPath)
+    }
+
+    private func logVideoResolution() {
+        guard let session else {
+            RecordingDiagnostics.log("Analytics session missing id=\(sessionId)")
+            return
+        }
+        let wrapped = WrapStorage.resolveVideoURL(session.wrappedVideoPath)
+        let raw = WrapStorage.resolveVideoURL(session.rawClipPath)
+        RecordingDiagnostics.log("Analytics session=\(sessionId) storedWrapped=\(session.wrappedVideoPath ?? "nil") resolvedWrapped=\(wrapped?.lastPathComponent ?? "nil") storedRaw=\(session.rawClipPath ?? "nil") resolvedRaw=\(raw?.lastPathComponent ?? "nil") playable=\(playableVideoURL?.lastPathComponent ?? "nil")")
     }
 
     // MARK: - Body
@@ -159,7 +177,12 @@ struct SessionAnalytics: View {
         .toolbar(.hidden, for: .navigationBar)
         .hidesFloatingTabBar()
         .onAppear {
-            distractionStat.fetchDistractions(for: sessionId, context: context)
+            if let session {
+                distractionStat.fetchDistractions(for: session, context: context)
+            } else {
+                distractionStat.fetchDistractions(for: sessionId, context: context)
+            }
+            logVideoResolution()
         }
         .task(id: sessionId) {
             await loadThumbnailIfNeeded()
@@ -217,6 +240,8 @@ struct SessionAnalytics: View {
         Image(systemName: "square.and.arrow.up")
             .font(.system(size: 20, weight: .semibold))
             .foregroundColor(.white)
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
             .opacity(session == nil ? 0.45 : 1)
             .accessibilityLabel("Share session analytics")
             .accessibilityHint("Opens sharing options for this session analytics")

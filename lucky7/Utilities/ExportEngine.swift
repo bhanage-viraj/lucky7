@@ -80,8 +80,6 @@ final class ExportEngine {
                     at: .zero
                 )
 
-                compositionTrack.preferredTransform = try await videoTrack.load(.preferredTransform)
-
                 if abs(rawSeconds - outputSeconds) > 0.05 {
                     compositionTrack.scaleTimeRange(
                         CMTimeRange(start: .zero, duration: sourceDuration),
@@ -155,7 +153,6 @@ final class ExportEngine {
                 withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid
             ) else { return false }
             try compTrack.insertTimeRange(timeRange, of: videoTrack, at: .zero)
-            compTrack.preferredTransform = try await videoTrack.load(.preferredTransform)
 
             let videoComposition = try await makePortraitVideoComposition(
                 for: composition, sourceVideoTrack: videoTrack, overlay: nil

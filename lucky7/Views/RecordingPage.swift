@@ -32,6 +32,7 @@ struct RecordingPage: View {
     @State private var hasStarted = false
     @State private var isStartingSession = false
     @State private var showEndConfirm = false
+    @State private var showFinishSessionFlow = false
     @State private var showCrashSession = false
     @State private var showNotifNudge = false
     @Environment(\.scenePhase) private var scenePhase
@@ -351,6 +352,7 @@ struct RecordingPage: View {
             #endif
         }
         .onAppear {
+            recLog("onAppear embedded=\(embedded) autoStart=\(autoStart) cameraReady=\(sessionRecording.cameraReady) hasStarted=\(hasStarted)")
             if !embedded { sessionRecording.prepareCamera() }
             if autoStart { beginSession() }   // camera may already be ready (prepared on Home)
             checkPendingEvents()
@@ -364,6 +366,7 @@ struct RecordingPage: View {
             }
         }
         .onChange(of: sessionRecording.cameraReady) { _, ready in
+            recLog("cameraReady changed ready=\(ready) autoStart=\(autoStart) hasStarted=\(hasStarted)")
             if autoStart, ready { beginSession() }   // start once the camera finishes warming up
         }
         .onReceive(NotificationCenter.default.publisher(for: .shieldReturnTapped)) { _ in
@@ -400,10 +403,11 @@ struct RecordingPage: View {
             #endif
         }
         .onChange(of: scenePhase) { _, phase in
+            recLog("scenePhase=\(phase) hasStarted=\(hasStarted) timerRunning=\(sessionTimer.isRunning) recording=\(sessionRecording.isRecording) exporting=\(sessionRecording.isExporting)")
             switch phase {
             case .active:
                 if hasStarted {
-                    sessionRecording.ensureCameraRunning()
+                    sessionRecording.recoverCameraAfterInterruption()
                 }
                 if sessionRecording.isRecording || sessionRecording.isExporting {
                     ScreenWakeLock.setActive(true)
@@ -431,7 +435,6 @@ struct RecordingPage: View {
                         sessionRecording.pauseRecording()
                         pausedByBackground = true
                     }
-                    sessionRecording.stopCamera()
                 }
                 #if os(iOS)
                 // away from a paused session (and not on a break) → ping them to come back
@@ -449,7 +452,10 @@ struct RecordingPage: View {
         }
         .onChange(of: sessionTimer.showFinishSession) { _, show in
             if show {
-                finalizeRecording()
+                sessionTimer.showFinishSession = false
+                finalizeRecording {
+                    showFinishSessionFlow = true
+                }
                 SessionNotifications.cancelAwayNudges()
                 #if os(iOS)
                 focusController.release()   // timer hit 00:00 — lift the shield + tear down the break Live Activity now, not after the recap
@@ -462,7 +468,7 @@ struct RecordingPage: View {
             exitToHomeFromSessionFlow()
         }
 
-        .fullScreenCover(isPresented: $sessionTimer.showFinishSession) {
+        .fullScreenCover(isPresented: $showFinishSessionFlow) {
             FinishSessionScreen(onFlowComplete: exitToHomeFromSessionFlow)
         }
         .fullScreenCover(isPresented: $showCrashSession) {
@@ -752,6 +758,7 @@ struct RecordingPage: View {
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
+            showFinishSessionFlow = false
             showCrashSession = false
             isExpanded = false
             sessionTimer.showFinishSession = false
@@ -777,11 +784,13 @@ struct RecordingPage: View {
     // (on iOS) the app shield. Used by both the on-screen START button and the
     // auto-start path when arriving from the home record button.
     private func beginSession() {
+        recLog("beginSession requested hasStarted=\(hasStarted) starting=\(isStartingSession) cameraReady=\(sessionRecording.cameraReady)")
         guard !hasStarted, !isStartingSession, sessionRecording.cameraReady else { return }
         isStartingSession = true
         sessionRecording.startRecording(
             plannedSessionSeconds: TimeInterval(sessionTimer.configuredTotalSeconds)
         ) { started in
+            recLog("beginSession startRecording callback started=\(started)")
             isStartingSession = false
             guard started else {
                 SessionNotifications.cancelAwayNudges()
@@ -800,6 +809,7 @@ struct RecordingPage: View {
 
     // Center control: pause a running session or resume a paused one.
     private func togglePauseResume() {
+        recLog("togglePauseResume hasStarted=\(hasStarted) timerRunning=\(sessionTimer.isRunning) recording=\(sessionRecording.isRecording)")
         guard hasStarted else { beginSession(); return }
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             if sessionTimer.isRunning {
@@ -821,6 +831,7 @@ struct RecordingPage: View {
     }
 
     private func endSessionEarly() {
+        recLog("endSessionEarly")
         SessionNotifications.cancelAwayNudges()
         sessionTimer.pause()
         #if os(iOS)
@@ -832,12 +843,17 @@ struct RecordingPage: View {
     }
 
     private func finalizeRecording(completion: @escaping () -> Void = {}) {
+        recLog("finalizeRecording hasStarted=\(hasStarted) elapsed=\(sessionTimer.elapsedSeconds) recording=\(sessionRecording.isRecording)")
         guard hasStarted else {
             completion()
             return
         }
         let wallClock = TimeInterval(sessionTimer.elapsedSeconds)
         sessionRecording.stopRecordingAndExport(wallClockSeconds: wallClock, completion: completion)
+    }
+
+    private func recLog(_ message: String) {
+        RecordingDiagnostics.log("RecordingPage \(message)")
     }
 }
 

@@ -30,6 +30,11 @@ struct CrashSessionScreen: View {
     @State private var step: SessionEndStep = .celebration
     @State private var sessionId: UUID?
     @State private var hasCompletedFlow = false
+    @State private var previewWaitTimedOut = false
+
+    private var canAdvanceToDetails: Bool {
+        !videoFrames.isEmpty || previewWaitTimedOut
+    }
 
     var body: some View {
         ZStack {
@@ -79,6 +84,7 @@ struct CrashSessionScreen: View {
             appeared = true
             shake = true
             createSessionIfNeeded()
+            startPreviewFallbackTimer()
             AccessibilitySupport.announce("Session ended early")
         }
         .onChange(of: sessionRecording.finalVideoURL) { _, url in
@@ -89,6 +95,11 @@ struct CrashSessionScreen: View {
         }
         .onChange(of: sessionRecording.photoAssetId) { _, id in
             persistPhotoAssetId(id)
+        }
+        .onChange(of: sessionRecording.previewFrames.count) { _, count in
+            if count > 0 {
+                RecordingDiagnostics.log("CrashSession preview ready count=\(count)")
+            }
         }
     }
 
@@ -110,6 +121,7 @@ struct CrashSessionScreen: View {
         if let session = try? context.fetch(descriptor).first {
             session.wrappedVideoPath = name
             try? context.save()
+            RecordingDiagnostics.log("CrashSession persist wrapped session=\(sessionId) path=\(name)")
         }
     }
 
@@ -120,6 +132,7 @@ struct CrashSessionScreen: View {
         if let session = try? context.fetch(descriptor).first {
             session.rawClipPath = name
             try? context.save()
+            RecordingDiagnostics.log("CrashSession persist raw session=\(sessionId) path=\(name)")
         }
     }
 
@@ -185,11 +198,12 @@ struct CrashSessionScreen: View {
                 Spacer()
 
                 Button(action: advanceToDetails) {
-                    Text("Tap to go to the next screen")
+                    Text(canAdvanceToDetails ? "Tap to go to the next screen" : "Preparing preview...")
                         .font(.system(size: 14))
                         .opacity(appeared ? 0.8 : 0)
                         .animation(.easeIn(duration: 0.5).delay(0.9), value: appeared)
                 }
+                .disabled(!canAdvanceToDetails)
                 .buttonStyle(.plain)
                 .accessibilityLabel("Continue to session details")
                 .accessibilityHint("Opens the screen to title and save your session")
@@ -204,6 +218,24 @@ struct CrashSessionScreen: View {
 
     private func advanceToDetails() {
         guard sessionId != nil, step == .celebration else { return }
+        guard canAdvanceToDetails else {
+            RecordingDiagnostics.log("CrashSession blocked details: preview not ready")
+            return
+        }
+        showDetails(reason: videoFrames.isEmpty ? "preview fallback" : "preview ready")
+    }
+
+    private func startPreviewFallbackTimer() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            guard videoFrames.isEmpty, step == .celebration else { return }
+            previewWaitTimedOut = true
+            RecordingDiagnostics.log("CrashSession preview wait timed out")
+        }
+    }
+
+    private func showDetails(reason: String) {
+        guard sessionId != nil, step == .celebration else { return }
+        RecordingDiagnostics.log("CrashSession show details reason=\(reason) previewFrames=\(videoFrames.count)")
         withAnimation(stepAnimation) {
             step = .details
         }
@@ -225,11 +257,14 @@ struct CrashSessionScreen: View {
         )
         context.insert(session)
         sessionId = id
+        SessionEndRecovery.markPending(id)
+        RecordingDiagnostics.log("CrashSession create session=\(id) wrapped=\(session.wrappedVideoPath ?? "nil") raw=\(session.rawClipPath ?? "nil")")
     }
 
     private func completeFlow() {
         guard !hasCompletedFlow else { return }
         hasCompletedFlow = true
+        SessionEndRecovery.clear(sessionId)
         onFlowComplete()
     }
 }

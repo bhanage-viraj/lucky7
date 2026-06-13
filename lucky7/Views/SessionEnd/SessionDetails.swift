@@ -65,9 +65,7 @@ struct SessionDetails: View {
     }
 
     private var canSave: Bool {
-        !sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-        !sessionDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-        !uploadedSnapshots.isEmpty
+        !sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func addSnapshot(_ image: UIImage) {
@@ -111,6 +109,7 @@ struct SessionDetails: View {
             }
         }
         .onAppear {
+            restoreRecoverableVideoState()
             scheduleBackgroundWrapExport()
         }
         .onChange(of: sessionTitle) { _, _ in
@@ -138,7 +137,7 @@ struct SessionDetails: View {
                     .foregroundColor(.black)
                     .multilineTextAlignment(.center)
 
-                LabeledField(title: "TITLE") {
+                LabeledField(title: "TITLE", isRequired: true) {
                     TextField("", text: $sessionTitle)
                         .font(.system(size: 15))
                         .foregroundColor(.black)
@@ -331,7 +330,7 @@ struct SessionDetails: View {
         if isSaving {
             return "Please wait while Rush Hour generates and saves your wrap"
         }
-        return canSave ? "Saves your session details and exports the session video" : "Add a title, description, or snapshot to save"
+        return canSave ? "Saves your session details and exports the session video" : "Add a title to save"
     }
 
     private var exportTitle: String {
@@ -372,6 +371,7 @@ struct SessionDetails: View {
             }
             sessionDuration = session.actualDuration
             try? context.save()
+            RecordingDiagnostics.log("SessionDetails saved text session=\(sessionId) raw=\(session.rawClipPath ?? "nil") wrapped=\(session.wrappedVideoPath ?? "nil")")
         }
 
         // Burn in the user's title and the session's actual focus duration as the hero number.
@@ -388,6 +388,7 @@ struct SessionDetails: View {
                     session.rawClipPath = rawName
                 }
                 try? context.save()
+                RecordingDiagnostics.log("SessionDetails final callback session=\(sessionId) final=\(finalURL?.lastPathComponent ?? "nil") raw=\(session.rawClipPath ?? "nil") wrapped=\(session.wrappedVideoPath ?? "nil")")
             }
 
             guard hasRecoverableVideo(finalURL: finalURL) else {
@@ -405,25 +406,43 @@ struct SessionDetails: View {
 
                 await MainActor.run {
                     isSaving = false
+                    SessionEndRecovery.clear(sessionId)
                     onSave?()
                 }
             }
         }
     }
 
+    private func restoreRecoverableVideoState() {
+        guard let session = sessions.first(where: { $0.id == sessionId }) else {
+            RecordingDiagnostics.log("SessionDetails restore skipped missing session=\(sessionId)")
+            return
+        }
+
+        let wrapped = WrapStorage.resolveVideoURL(session.wrappedVideoPath)
+        let raw = WrapStorage.resolveVideoURL(session.rawClipPath)
+        RecordingDiagnostics.log("SessionDetails restore session=\(sessionId) storedWrapped=\(session.wrappedVideoPath ?? "nil") resolvedWrapped=\(wrapped?.lastPathComponent ?? "nil") storedRaw=\(session.rawClipPath ?? "nil") resolvedRaw=\(raw?.lastPathComponent ?? "nil")")
+        sessionRecording.restoreExportContext(rawURL: raw, finalURL: wrapped)
+    }
+
     private func hasRecoverableVideo(finalURL: URL?) -> Bool {
         if let finalURL, FileManager.default.fileExists(atPath: finalURL.path) {
+            RecordingDiagnostics.log("SessionDetails recoverable via final=\(finalURL.lastPathComponent)")
             return true
         }
         if let rawURL = sessionRecording.rawClipURL,
            FileManager.default.fileExists(atPath: rawURL.path) {
+            RecordingDiagnostics.log("SessionDetails recoverable via live raw=\(rawURL.lastPathComponent)")
             return true
         }
         guard let session = sessions.first(where: { $0.id == sessionId }) else {
+            RecordingDiagnostics.log("SessionDetails not recoverable: session missing")
             return false
         }
-        return WrapStorage.resolveVideoURL(session.wrappedVideoPath) != nil
-            || WrapStorage.resolveVideoURL(session.rawClipPath) != nil
+        let wrapped = WrapStorage.resolveVideoURL(session.wrappedVideoPath)
+        let raw = WrapStorage.resolveVideoURL(session.rawClipPath)
+        RecordingDiagnostics.log("SessionDetails recover check storedWrapped=\(session.wrappedVideoPath ?? "nil") resolvedWrapped=\(wrapped?.lastPathComponent ?? "nil") storedRaw=\(session.rawClipPath ?? "nil") resolvedRaw=\(raw?.lastPathComponent ?? "nil")")
+        return wrapped != nil || raw != nil
     }
 }
 
@@ -515,18 +534,26 @@ struct PatternBorderedCard<Content: View>: View {
 /// A left-aligned uppercase label sitting above a form control.
 struct LabeledField<Content: View>: View {
     let title: String
+    var isRequired: Bool
     let content: Content
 
-    init(title: String, @ViewBuilder content: () -> Content) {
+    init(title: String, isRequired: Bool = false, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.isRequired = isRequired
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.custom("Special Gothic Expanded One", size: 11))
-                .foregroundColor(.black)
+            HStack(spacing: 2) {
+                Text(title)
+                if isRequired {
+                    Text("*")
+                        .accessibilityLabel("required")
+                }
+            }
+            .font(.custom("Special Gothic Expanded One", size: 11))
+            .foregroundColor(.black)
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)

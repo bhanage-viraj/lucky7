@@ -102,12 +102,21 @@ struct WeeklyAnalyticScreen: View {
         allDistractions.filter { sessionIDs.contains($0.sessionId) }
     }
 
+    private var sessionsByID: [UUID: Session] {
+        Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+    }
+
+    private func distractedDuration(_ distraction: Distraction) -> TimeInterval {
+        guard let session = sessionsByID[distraction.sessionId] else { return 0 }
+        return distraction.duration(overlapping: session)
+    }
+
     private var weekTotalDuration: TimeInterval {
         sessions.reduce(0) { $0 + $1.actualDuration }
     }
 
     private var totalDistracted: TimeInterval {
-        weekDistractions.reduce(0) { $0 + $1.distractionDuration }
+        weekDistractions.reduce(0) { $0 + distractedDuration($1) }
     }
 
     private var totalFocus: TimeInterval {
@@ -163,7 +172,7 @@ struct WeeklyAnalyticScreen: View {
             let dayIDs = Set(daySessions.map(\.id))
             let distracted = weekDistractions
                 .filter { dayIDs.contains($0.sessionId) }
-                .reduce(0) { $0 + $1.distractionDuration }
+                .reduce(0) { $0 + distractedDuration($1) }
             let total = daySessions.reduce(0) { $0 + $1.actualDuration }
             return DayStat(
                 date: day,
@@ -213,7 +222,8 @@ struct WeeklyAnalyticScreen: View {
         var byName: [String: TimeInterval] = [:]
 
         for distraction in weekDistractions {
-            let duration = distraction.distractionDuration
+            let duration = distractedDuration(distraction)
+            guard duration > 0 else { continue }
             if let token = decodeToken(distraction.tokenData) {
                 var entry = byToken[token] ?? (resolvedName(distraction), 0)
                 entry.duration += duration
