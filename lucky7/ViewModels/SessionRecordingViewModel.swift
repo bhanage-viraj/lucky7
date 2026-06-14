@@ -25,6 +25,7 @@ final class SessionRecordingViewModel: ObservableObject {
     @Published var photoAssetId: String?
     @Published var lastError: String?
     @Published var statusMessage: String?
+    @Published private(set) var isCapturePaused = false
 
     private let timelapseManager = TimelapseManager()
     private let exportEngine = ExportEngine.shared
@@ -121,11 +122,13 @@ final class SessionRecordingViewModel: ObservableObject {
                 guard let self else { return }
                 if started {
                     self.isRecording = true
+                    self.isCapturePaused = false
                     self.didCaptureThisSession = true
                     self.log("startRecording succeeded")
                     ScreenWakeLock.setActive(true)
                     AccessibilitySupport.announce("Recording started")
                 } else {
+                    self.isCapturePaused = false
                     self.lastError = "Could not start recording. Keep the camera preview open and try again."
                     self.statusMessage = nil
                     self.log("startRecording failed from timelapse")
@@ -135,24 +138,41 @@ final class SessionRecordingViewModel: ObservableObject {
         }
     }
 
-    func pauseRecording() {
-        log("pauseRecording")
+    func pauseRecording(reason: String = "manual") {
+        log("pauseRecording reason=\(reason) isRecording=\(isRecording) paused=\(isCapturePaused)")
+        guard isRecording else { return }
+        guard !isCapturePaused else { return }
+        isCapturePaused = true
         timelapseManager.pauseCapture()
         statusMessage = "Recording paused"
         AccessibilitySupport.announce("Recording paused")
     }
 
-    func resumeRecording() {
-        log("resumeRecording")
-        timelapseManager.restartRunning()
+    func resumeRecording(reason: String = "manual") {
+        log("resumeRecording reason=\(reason) isRecording=\(isRecording) paused=\(isCapturePaused)")
+        guard isRecording else { return }
+        guard isCapturePaused else {
+            timelapseManager.startRunning()
+            return
+        }
+        isCapturePaused = false
         timelapseManager.resumeCapture()
         statusMessage = "Recording…"
         AccessibilitySupport.announce("Recording resumed")
     }
 
     func recoverCameraAfterInterruption() {
-        log("recoverCameraAfterInterruption")
-        timelapseManager.restartRunning()
+        log("recoverCameraAfterInterruption isRecording=\(isRecording) paused=\(isCapturePaused)")
+        guard isRecording, !isCapturePaused else { return }
+        timelapseManager.startRunning()
+    }
+
+    /// The recording writer can't survive the app being suspended, so finalize the current
+    /// segment before we background. Safe to call whether the session is running or paused.
+    func prepareForBackground() {
+        guard isRecording else { return }
+        log("prepareForBackground paused=\(isCapturePaused)")
+        timelapseManager.prepareForBackground()
     }
 
     func stopRecordingAndExport(
@@ -178,6 +198,7 @@ final class SessionRecordingViewModel: ObservableObject {
         }
 
         isRecording = false
+        isCapturePaused = false
         isStoppingRecording = true
         ScreenWakeLock.setActive(true)
         statusMessage = "Preparing your session…"
@@ -296,6 +317,7 @@ final class SessionRecordingViewModel: ObservableObject {
         log("resetForNewSession final=\(finalVideoURL?.lastPathComponent ?? "nil") raw=\(rawClipURL?.lastPathComponent ?? "nil")")
         ScreenWakeLock.release()
         isRecording = false
+        isCapturePaused = false
         isExporting = false
         let persistedRawURL = rawClipURL
         finalVideoURL = nil

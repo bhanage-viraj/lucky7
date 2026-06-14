@@ -31,6 +31,7 @@ struct RecordingPage: View {
 
     @State private var hasStarted = false
     @State private var isStartingSession = false
+    @State private var isPauseResumeTransitioning = false
     @State private var showEndConfirm = false
     @State private var showFinishSessionFlow = false
     @State private var showCrashSession = false
@@ -52,11 +53,6 @@ struct RecordingPage: View {
     @State private var unlock: UnlockInfo?
     @State private var breakBlockedInfo: BreakBlockedInfo?
 
-    // leaving the app auto-pauses the session; this drives the "paused while you were
-    // away" card on return so nobody stares at a frozen timer wondering why
-    @State private var pausedByBackground = false
-    @State private var awayPause: AwayPauseInfo?
-
     struct PendingPrompt: Identifiable {
         let id = UUID()
         let distraction: Distraction
@@ -72,10 +68,6 @@ struct RecordingPage: View {
     // shown instead of the reason form when a break is already running — only one
     // app can be unlocked at a time, so a second "Break It" is rejected with a warning.
     struct BreakBlockedInfo: Identifiable {
-        let id = UUID()
-    }
-
-    struct AwayPauseInfo: Identifiable {
         let id = UUID()
     }
 
@@ -198,6 +190,8 @@ struct RecordingPage: View {
                     .accessibilityInputLabels(sessionTimer.isRunning
                         ? ["pause", "pause session", "pause recording"]
                         : ["resume", "play", "resume session", "continue recording"])
+                    .disabled(isPauseResumeTransitioning)
+                    .opacity(isPauseResumeTransitioning ? 0.65 : 1)
 
                     Spacer()
 
@@ -340,14 +334,6 @@ struct RecordingPage: View {
                     onDismiss: { breakBlockedInfo = nil }
                 )
                 .id(b.id)
-            } else if let a = awayPause {
-                FocusAlertCard(
-                    title: "Session Paused",
-                    message: "Your session paused while you were away. Tap the play button to resume.",
-                    autoDismiss: true,
-                    onDismiss: { awayPause = nil }
-                )
-                .id(a.id)
             }
             #endif
         }
@@ -406,8 +392,10 @@ struct RecordingPage: View {
             recLog("scenePhase=\(phase) hasStarted=\(hasStarted) timerRunning=\(sessionTimer.isRunning) recording=\(sessionRecording.isRecording) exporting=\(sessionRecording.isExporting)")
             switch phase {
             case .active:
-                if hasStarted {
+                if hasStarted, sessionTimer.isRunning {
                     sessionRecording.recoverCameraAfterInterruption()
+                } else if hasStarted {
+                    recLog("scenePhase active skipped camera recovery because session is paused")
                 }
                 if sessionRecording.isRecording || sessionRecording.isExporting {
                     ScreenWakeLock.setActive(true)
@@ -417,24 +405,22 @@ struct RecordingPage: View {
                 SessionNotifications.cancelAwayNudges()   // they're back — drop the "still there?" pings
                 // notifications ARE the return path now — re-nudge if they got denied mid-session
                 Task { if await NotificationPermission.isDenied() { showNotifNudge = true } }
-                // back to a session that auto-paused on the way out — make the paused
-                // state unmissable (unless a break prompt/card is already taking over)
-                if pausedByBackground {
-                    pausedByBackground = false
-                    if pendingPrompt == nil, unlock == nil, breakBlockedInfo == nil {
-                        awayPause = AwayPauseInfo()
-                    }
-                }
             case .background:
-                let shouldNudgeAway = hasStarted && sessionRecording.isRecording
+                isPauseResumeTransitioning = false
+                let wasRunning = sessionTimer.isRunning
+                let shouldNudgeAway = hasStarted && sessionRecording.isRecording && wasRunning
                 // left the app → pause the session instead of letting it silently freeze and
                 // auto-resume; the button flips to RESUME so you pick back up deliberately
                 if hasStarted {
-                    if sessionTimer.isRunning {
-                        sessionTimer.pause()
-                        sessionRecording.pauseRecording()
-                        pausedByBackground = true
+                    if wasRunning {
+                        pauseLiveSession(reason: "background")
+                    } else {
+                        recLog("scenePhase background left while already paused")
                     }
+                    // The capture writer can't survive suspension — finalize the current
+                    // segment now (running OR already paused, incl. the Screen-Time redirect)
+                    // so footage isn't lost; a fresh segment opens on resume.
+                    sessionRecording.prepareForBackground()
                 }
                 #if os(iOS)
                 // away from a paused session (and not on a break) → ping them to come back
@@ -619,6 +605,8 @@ struct RecordingPage: View {
                 }
                 .accessibilityLabel(sessionTimer.isRunning ? "Pause session" : "Resume session")
                 .accessibilityInputLabels(sessionTimer.isRunning ? ["pause"] : ["resume", "play"])
+                .disabled(isPauseResumeTransitioning)
+                .opacity(isPauseResumeTransitioning ? 0.65 : 1)
 
                 Spacer()
 
@@ -765,8 +753,7 @@ struct RecordingPage: View {
         }
         hasStarted = false
         isStartingSession = false
-        pausedByBackground = false
-        awayPause = nil
+        isPauseResumeTransitioning = false
         sessionTimer.pause()
         SessionNotifications.cancelAwayNudges()
         // Embedded: keep the shared camera running so it flows straight back into the
@@ -809,25 +796,43 @@ struct RecordingPage: View {
 
     // Center control: pause a running session or resume a paused one.
     private func togglePauseResume() {
-        recLog("togglePauseResume hasStarted=\(hasStarted) timerRunning=\(sessionTimer.isRunning) recording=\(sessionRecording.isRecording)")
+        recLog("togglePauseResume hasStarted=\(hasStarted) timerRunning=\(sessionTimer.isRunning) recording=\(sessionRecording.isRecording) transitioning=\(isPauseResumeTransitioning)")
         guard hasStarted else { beginSession(); return }
+        guard !isPauseResumeTransitioning, sessionRecording.isRecording else { return }
+        isPauseResumeTransitioning = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+            isPauseResumeTransitioning = false
+        }
+
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             if sessionTimer.isRunning {
-                // PAUSE recording (the block stays on for the whole session)
-                sessionTimer.pause()
-                sessionRecording.pauseRecording()
+                pauseLiveSession(reason: "manual")
             } else {
-                // RESUME recording — and end any active break so the unlocked
-                // app re-blocks when you go back to focusing
-                pausedByBackground = false
-                awayPause = nil
-                sessionTimer.start()
-                sessionRecording.resumeRecording()
-                #if os(iOS)
-                focusController.resume()
-                #endif
+                resumeLiveSession(reason: "manual")
             }
         }
+    }
+
+    private func pauseLiveSession(reason: String) {
+        recLog("pauseLiveSession reason=\(reason) timerRunning=\(sessionTimer.isRunning) capturePaused=\(sessionRecording.isCapturePaused)")
+        guard hasStarted else { return }
+        let wasRunning = sessionTimer.isRunning
+        if wasRunning {
+            sessionTimer.pause()
+        }
+        if wasRunning || !sessionRecording.isCapturePaused {
+            sessionRecording.pauseRecording(reason: reason)
+        }
+    }
+
+    private func resumeLiveSession(reason: String) {
+        recLog("resumeLiveSession reason=\(reason) recording=\(sessionRecording.isRecording) capturePaused=\(sessionRecording.isCapturePaused)")
+        guard hasStarted, sessionRecording.isRecording else { return }
+        sessionTimer.start()
+        sessionRecording.resumeRecording(reason: reason)
+        #if os(iOS)
+        focusController.resume()
+        #endif
     }
 
     private func endSessionEarly() {

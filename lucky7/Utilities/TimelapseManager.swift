@@ -5,6 +5,12 @@
 //  Spreads up to 1800 frames evenly across the planned session.
 //  Stops early → fewer frames → shorter video (e.g. half session → 900 frames → 15s @ 60fps).
 //
+//  Segmented across app-background: an AVAssetWriter can't survive the app being suspended
+//  (iOS reclaims the VideoToolbox encoder and the writer goes terminal .failed). So every time
+//  we background we finalize the current writer to its own file and open a fresh one on resume,
+//  then stitch the segments back into one raw clip at finish. A session that never backgrounds
+//  is a single segment and returns that file directly — unchanged from the old single-writer path.
+//
 
 import AVFoundation
 import UIKit
@@ -28,7 +34,26 @@ final class TimelapseManager: NSObject {
     }
 
     private var cameraFrameIndex = 0
+    /// Frames captured across the WHOLE session (all segments). Drives capture cadence + duration.
     private var framesCaptured = 0
+    /// Frames in the CURRENT segment only. Drives per-segment presentation time (restarts at 0
+    /// every segment, because each segment's writer does startSession(atSourceTime: .zero)).
+    private var segmentFrameIndex = 0
+    /// Finalized segment files (each with >= 1 written frame), in capture order.
+    private var segmentURLs: [URL] = []
+    /// Set when the live writer was torn down (background / writer-failure) and the next frame
+    /// should open a fresh segment. NOT the same as `assetWriter == nil`, which is also the idle
+    /// state after reset/finish — we must not spawn a segment in those cases.
+    private var needsNewSegment = false
+    /// True from the moment finishRecording commits to stopping — blocks opening new segments.
+    private var isStopping = false
+    /// True while a background segment finalize (finishWriting) is still flushing. finishRecording
+    /// waits this out so it never double-finalizes the same writer.
+    private var finalizingInFlight = false
+    /// Bumped by resetWriterState. A background finalize captures it before finishWriting; if it
+    /// no longer matches when the (async, off-queue) completion lands, the session was reset / a
+    /// new one started underneath it, so the late segment is discarded instead of corrupting state.
+    private var finalizeGeneration = 0
     private var plannedSessionSeconds: TimeInterval = 3600
     private var captureIntervalSeconds: TimeInterval = 2
     private var isRecording = false
@@ -44,6 +69,10 @@ final class TimelapseManager: NSObject {
     private var loggedPausedDrop = false
     private var loggedMissingWriterDrop = false
     private var pendingStartCompletion: ((Bool) -> Void)?
+    private var captureCommandGeneration = 0
+    /// Keeps the app alive long enough to flush finishWriting when we background mid-recording.
+    /// Touched only on the main thread.
+    private var backgroundTaskId: UIBackgroundTaskIdentifier = .invalid
 
     private(set) var outputURL: URL?
     private(set) var lastCapturedFrameCount = 0
@@ -124,27 +153,78 @@ final class TimelapseManager: NSObject {
 
     func pauseCapture() {
         writerQueue.async {
-            self.capturePaused = true
-            self.log("capture paused framesCaptured=\(self.framesCaptured) samples=\(self.sampleBuffersReceived)")
-            guard self.pauseBeganWallSeconds == nil else { return }
-            self.pauseBeganWallSeconds = self.currentWallElapsedSeconds()
+            self.captureCommandGeneration += 1
+            self.pauseCaptureOnWriterQueue()
         }
     }
 
     func resumeCapture() {
         writerQueue.async {
-            if let began = self.pauseBeganWallSeconds {
-                let end = self.currentWallElapsedSeconds()
-                self.totalPausedSeconds += max(0, end - began)
-                self.pauseBeganWallSeconds = nil
+            self.captureCommandGeneration += 1
+            let generation = self.captureCommandGeneration
+            self.sessionQueue.async {
+                if !self.session.isRunning {
+                    self.session.startRunning()
+                }
+                self.log("camera ensured for resume running=\(self.session.isRunning) generation=\(generation)")
+                self.writerQueue.async {
+                    guard generation == self.captureCommandGeneration else {
+                        self.log("capture resume ignored: stale generation=\(generation) current=\(self.captureCommandGeneration)")
+                        return
+                    }
+                    self.resumeCaptureOnWriterQueue()
+                }
             }
-            self.capturePaused = false
-            self.log("capture resumed framesCaptured=\(self.framesCaptured) samples=\(self.sampleBuffersReceived)")
         }
+    }
+
+    /// Called from scenePhase .background whenever a session is live (running OR already paused).
+    /// The writer can't survive suspension, so finalize the current segment NOW — atomically with
+    /// pausing — and arrange for a fresh segment on the next resume.
+    func prepareForBackground() {
+        writerQueue.async {
+            self.captureCommandGeneration += 1
+            self.capturePaused = true
+            if self.pauseBeganWallSeconds == nil {
+                self.pauseBeganWallSeconds = self.currentWallElapsedSeconds()
+            }
+            guard self.isRecording else { return }
+            self.finalizeCurrentSegmentForBackground()
+        }
+    }
+
+    private func pauseCaptureOnWriterQueue() {
+        capturePaused = true
+        log("capture paused framesCaptured=\(framesCaptured) samples=\(sampleBuffersReceived)")
+        if pauseBeganWallSeconds == nil {
+            pauseBeganWallSeconds = currentWallElapsedSeconds()
+        }
+    }
+
+    private func resumeCaptureOnWriterQueue() {
+        guard isRecording else {
+            log("capture resume ignored: not recording")
+            return
+        }
+        let wasPaused = capturePaused || pauseBeganWallSeconds != nil
+        guard wasPaused else {
+            log("capture resume ignored: already active framesCaptured=\(framesCaptured) samples=\(sampleBuffersReceived)")
+            return
+        }
+
+        if let began = pauseBeganWallSeconds {
+            let end = currentWallElapsedSeconds()
+            totalPausedSeconds += max(0, end - began)
+            pauseBeganWallSeconds = nil
+        }
+        capturePaused = false
+        loggedPausedDrop = false
+        log("capture resumed framesCaptured=\(framesCaptured) samples=\(sampleBuffersReceived) needsNewSegment=\(needsNewSegment)")
     }
 
     func resetCapturePause() {
         writerQueue.async {
+            self.captureCommandGeneration += 1
             self.capturePaused = false
             self.pauseBeganWallSeconds = nil
             self.log("capture pause reset")
@@ -201,13 +281,15 @@ final class TimelapseManager: NSObject {
 
     func stopRecording(completion: @escaping (TimelapseStopResult) -> Void) {
         let waitUntil = DispatchTime.now() + .milliseconds(1200)
+        let finalizeDeadline = DispatchTime.now() + .seconds(5)
         writerQueue.async {
-            self.finishRecording(waitUntil: waitUntil, completion: completion)
+            self.finishRecording(waitUntil: waitUntil, finalizeDeadline: finalizeDeadline, completion: completion)
         }
     }
 
     private func finishRecording(
         waitUntil: DispatchTime,
+        finalizeDeadline: DispatchTime,
         completion: @escaping (TimelapseStopResult) -> Void
     ) {
         guard self.isRecording else {
@@ -218,30 +300,76 @@ final class TimelapseManager: NSObject {
             return
         }
 
-        var hasUsableFrame = self.isWriterReady && self.hasWrittenFrame && self.framesCaptured > 0
-        if !hasUsableFrame, self.capturePaused {
-            self.endPauseAccountingForStop()
-            hasUsableFrame = self.isWriterReady && self.hasWrittenFrame && self.framesCaptured > 0
+        // A background segment finalize might still be flushing — let it land (so its frames
+        // make it into segmentURLs) before we read the segment list / finalize the live writer.
+        if self.finalizingInFlight, DispatchTime.now().uptimeNanoseconds < finalizeDeadline.uptimeNanoseconds {
+            self.writerQueue.asyncAfter(deadline: .now() + .milliseconds(150)) {
+                self.finishRecording(waitUntil: waitUntil, finalizeDeadline: finalizeDeadline, completion: completion)
+            }
+            return
         }
 
-        if !hasUsableFrame,
+        var liveSegmentHasFrames = self.isWriterReady && self.segmentFrameIndex > 0
+        var hasAnyFootage = !self.segmentURLs.isEmpty || liveSegmentHasFrames
+
+        if !hasAnyFootage, self.capturePaused {
+            self.endPauseAccountingForStop()
+            liveSegmentHasFrames = self.isWriterReady && self.segmentFrameIndex > 0
+            hasAnyFootage = !self.segmentURLs.isEmpty || liveSegmentHasFrames
+        }
+
+        if !hasAnyFootage,
            DispatchTime.now().uptimeNanoseconds < waitUntil.uptimeNanoseconds {
-            self.log("stop waiting for first usable frame samples=\(self.sampleBuffersReceived) writerReady=\(self.isWriterReady) hasFrame=\(self.hasWrittenFrame)")
+            self.log("stop waiting for first usable frame samples=\(self.sampleBuffersReceived) writerReady=\(self.isWriterReady) segFrames=\(self.segmentFrameIndex) segments=\(self.segmentURLs.count)")
             self.startRunning()
             self.writerQueue.asyncAfter(deadline: .now() + .milliseconds(150)) {
-                self.finishRecording(waitUntil: waitUntil, completion: completion)
+                self.finishRecording(waitUntil: waitUntil, finalizeDeadline: finalizeDeadline, completion: completion)
             }
             return
         }
 
         self.isRecording = false
+        self.isStopping = true
+
+        // Finalize the live segment if it captured anything, then deliver. The finishWriting
+        // completion runs off our queue, so re-hop to writerQueue before touching shared state.
+        if liveSegmentHasFrames, let writer = self.assetWriter, let input = self.writerInput, let url = self.outputURL {
+            let segFrames = self.segmentFrameIndex
+            self.assetWriter = nil
+            self.writerInput = nil
+            self.pixelBufferAdaptor = nil
+            self.isWriterReady = false
+            self.segmentFrameIndex = 0
+            input.markAsFinished()
+            writer.finishWriting {
+                let ok = writer.status == .completed
+                self.writerQueue.async {
+                    if ok {
+                        self.segmentURLs.append(url)
+                    } else {
+                        try? FileManager.default.removeItem(at: url)
+                        self.framesCaptured = max(0, self.framesCaptured - segFrames)
+                        self.log("stop live segment finalize failed status=\(writer.status.rawValue) error=\(writer.error?.localizedDescription ?? "unknown")")
+                    }
+                    self.log("stop finalized live segment ok=\(ok) frames=\(segFrames)")
+                    self.deliverFinalResult(completion: completion)
+                }
+            }
+        } else {
+            // No frames in the live segment — drop any empty writer and ship the earlier segments.
+            self.discardCurrentSegment()
+            self.deliverFinalResult(completion: completion)
+        }
+    }
+
+    /// Builds the final raw clip from whatever segments we captured and hands it back on main.
+    /// Always runs on writerQueue.
+    private func deliverFinalResult(completion: @escaping (TimelapseStopResult) -> Void) {
+        let segments = self.segmentURLs
         let captured = self.framesCaptured
 
-        guard let writer = self.assetWriter, self.isWriterReady, self.hasWrittenFrame, captured > 0 else {
-            self.log("stop failed no frames captured samples=\(self.sampleBuffersReceived) writerReady=\(self.isWriterReady) hasFrame=\(self.hasWrittenFrame) captured=\(captured)")
-            if let url = self.outputURL {
-                try? FileManager.default.removeItem(at: url)
-            }
+        guard !segments.isEmpty else {
+            self.log("stop failed: no segments captured samples=\(self.sampleBuffersReceived)")
             self.finishStartCompletion(false)
             self.resetWriterState()
             DispatchQueue.main.async {
@@ -250,31 +378,58 @@ final class TimelapseManager: NSObject {
             return
         }
 
-        self.writerInput?.markAsFinished()
-
-        writer.finishWriting {
-            let success = writer.status == .completed
-            let url = success ? self.outputURL : nil
-            let duration = AppConstants.wrappedDurationSeconds(frameCount: captured)
-            if success {
-                print(
-                    String(
-                        format: "TimelapseManager: %d frames → %.1fs video @ %.0ffps",
-                        captured,
-                        duration,
-                        AppConstants.wrappedOutputFPS
-                    )
-                )
-            } else {
-                self.log("finishWriting failed error=\(writer.error?.localizedDescription ?? "unknown") captured=\(captured)")
+        if segments.count == 1 {
+            let url = segments[0]
+            let exists = FileManager.default.fileExists(atPath: url.path)
+            self.lastCapturedFrameCount = captured
+            self.segmentURLs = []   // hand ownership to the caller; don't let reset delete it
+            self.log("stop finished single segment frames=\(captured) url=\(url.lastPathComponent) exists=\(exists)")
+            self.resetWriterState()
+            DispatchQueue.main.async {
+                completion(TimelapseStopResult(url: url, frameCount: captured))
             }
+            return
+        }
+
+        // 2+ segments → stitch them back into one continuous raw clip. Keep the app alive for
+        // the export in case the user has wandered off to the recap screen.
+        self.log("stop stitching segments=\(segments.count) frames=\(captured)")
+        self.beginBackgroundTaskIfNeeded()
+        Task {
+            let stitched = await ExportEngine.shared.concatenateRawSegments(segments)
+            let fallback = stitched == nil ? await ExportEngine.shared.longestSegment(segments) : nil
             self.writerQueue.async {
-                let exists = url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
-                self.log("stop finished success=\(success) captured=\(captured) url=\(url?.lastPathComponent ?? "nil") exists=\(exists)")
-                self.lastCapturedFrameCount = captured
-                self.resetWriterState()
-                DispatchQueue.main.async {
-                    completion(TimelapseStopResult(url: url, frameCount: captured))
+                self.endBackgroundTask()
+                if let stitched {
+                    // Frame count from the stitched duration so the downstream scaleTimeRange stays a no-op.
+                    let count = max(1, Int((stitched.durationSeconds * AppConstants.wrappedOutputFPS).rounded()))
+                    for url in segments { try? FileManager.default.removeItem(at: url) }
+                    self.lastCapturedFrameCount = count
+                    self.segmentURLs = []
+                    self.log("stitch ok segments=\(segments.count) frames=\(count) url=\(stitched.url.lastPathComponent)")
+                    self.resetWriterState()
+                    DispatchQueue.main.async {
+                        completion(TimelapseStopResult(url: stitched.url, frameCount: count))
+                    }
+                } else if let longest = fallback {
+                    // Stitch failed — ship the longest single segment so we never lose ALL footage.
+                    // Frame count comes from ITS duration, not the whole-session total, so the
+                    // downstream scaleTimeRange doesn't slow-mo stretch the shorter clip.
+                    let count = max(1, Int((longest.durationSeconds * AppConstants.wrappedOutputFPS).rounded()))
+                    for url in segments where url != longest.url { try? FileManager.default.removeItem(at: url) }
+                    self.lastCapturedFrameCount = count
+                    self.segmentURLs = []
+                    self.log("stitch FAILED; falling back to longest segment frames=\(count) url=\(longest.url.lastPathComponent)")
+                    self.resetWriterState()
+                    DispatchQueue.main.async {
+                        completion(TimelapseStopResult(url: longest.url, frameCount: count))
+                    }
+                } else {
+                    self.log("stitch FAILED and no usable segment found")
+                    self.resetWriterState()
+                    DispatchQueue.main.async {
+                        completion(TimelapseStopResult(url: nil, frameCount: 0))
+                    }
                 }
             }
         }
@@ -354,6 +509,15 @@ final class TimelapseManager: NSObject {
         hasWrittenFrame = false
         cameraFrameIndex = 0
         framesCaptured = 0
+        segmentFrameIndex = 0
+        // Delete any segment files that weren't handed off to a caller (abandoned recording).
+        for url in segmentURLs { try? FileManager.default.removeItem(at: url) }
+        segmentURLs = []
+        needsNewSegment = false
+        isStopping = false
+        finalizingInFlight = false
+        // Invalidate any background finalize still in flight so its late completion no-ops.
+        finalizeGeneration += 1
         sampleBuffersReceived = 0
         loggedNotRecordingDrop = false
         loggedPausedDrop = false
@@ -362,11 +526,108 @@ final class TimelapseManager: NSObject {
         totalPausedSeconds = 0
         pauseBeganWallSeconds = nil
         pendingStartCompletion = nil
+        captureCommandGeneration = 0
     }
 
     private static func makeOutputURL(suffix: String) -> URL? {
         let name = "timelapse_\(suffix)_\(UUID().uuidString).mp4"
         return FileManager.default.temporaryDirectory.appendingPathComponent(name)
+    }
+
+    /// Opens a fresh writer for the next segment (after a background or a writer failure).
+    /// The input + startSession are added lazily on the first real frame in setupWriterIfNeeded.
+    private func beginNewSegment() -> Bool {
+        guard let url = Self.makeOutputURL(suffix: "raw") else {
+            log("new segment failed: output URL nil")
+            return false
+        }
+        do {
+            let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+            assetWriter = writer
+            outputURL = url
+            writerInput = nil
+            pixelBufferAdaptor = nil
+            isWriterReady = false
+            segmentFrameIndex = 0
+            loggedPausedDrop = false
+            loggedMissingWriterDrop = false
+            log("new segment opened url=\(url.lastPathComponent) totalFrames=\(framesCaptured)")
+            return true
+        } catch {
+            log("new segment failed error=\(error.localizedDescription)")
+            return false
+        }
+    }
+
+    /// Throws away the current (unusable / empty) writer and its file without counting its frames.
+    private func discardCurrentSegment() {
+        guard let writer = assetWriter else { return }
+        if writer.status == .writing {
+            writer.cancelWriting()
+        }
+        if let url = outputURL {
+            try? FileManager.default.removeItem(at: url)
+        }
+        framesCaptured = max(0, framesCaptured - segmentFrameIndex)
+        segmentFrameIndex = 0
+        assetWriter = nil
+        writerInput = nil
+        pixelBufferAdaptor = nil
+        isWriterReady = false
+    }
+
+    /// Atomically (on writerQueue) tears down the live writer ahead of suspension. Non-empty
+    /// segments are finished to disk; empty ones are dropped. Either way the next resume opens
+    /// a fresh segment.
+    private func finalizeCurrentSegmentForBackground() {
+        guard let writer = assetWriter else {
+            needsNewSegment = true
+            return
+        }
+
+        if isWriterReady, let input = writerInput, segmentFrameIndex > 0 {
+            let url = outputURL
+            let segFrames = segmentFrameIndex
+            assetWriter = nil
+            writerInput = nil
+            pixelBufferAdaptor = nil
+            isWriterReady = false
+            segmentFrameIndex = 0
+            needsNewSegment = true
+            finalizingInFlight = true
+            let gen = finalizeGeneration
+            beginBackgroundTaskIfNeeded()
+            input.markAsFinished()
+            writer.finishWriting {
+                let ok = writer.status == .completed
+                self.writerQueue.async {
+                    // The session may have been reset / a new one started while this flush was in
+                    // the air (e.g. End tapped past the finalize deadline). If so this segment is
+                    // orphaned — drop its file and don't touch the now-foreign live state.
+                    guard gen == self.finalizeGeneration else {
+                        if let url { try? FileManager.default.removeItem(at: url) }
+                        self.endBackgroundTask()
+                        self.log("background segment finalize stale gen=\(gen) current=\(self.finalizeGeneration); discarded \(url?.lastPathComponent ?? "nil")")
+                        return
+                    }
+                    if ok, let url {
+                        self.segmentURLs.append(url)
+                        self.log("background segment finalized frames=\(segFrames) url=\(url.lastPathComponent)")
+                    } else {
+                        if let url { try? FileManager.default.removeItem(at: url) }
+                        self.framesCaptured = max(0, self.framesCaptured - segFrames)
+                        self.log("background segment finalize failed status=\(writer.status.rawValue) error=\(writer.error?.localizedDescription ?? "unknown")")
+                    }
+                    self.finalizingInFlight = false
+                    self.endBackgroundTask()
+                }
+            }
+        } else {
+            // Writer never produced a frame this segment — nothing worth keeping.
+            discardCurrentSegment()
+            needsNewSegment = true
+            log("background discarded empty segment framesCaptured=\(framesCaptured)")
+        }
     }
 
     private func currentWallElapsedSeconds(now: Double = ProcessInfo.processInfo.systemUptime) -> Double {
@@ -449,7 +710,11 @@ final class TimelapseManager: NSObject {
         writerInput = input
         pixelBufferAdaptor = adaptor
         isWriterReady = true
-        recordingStartWallSeconds = ProcessInfo.processInfo.systemUptime
+        // Set ONCE for the whole session — new segments reuse the same wall-clock origin so the
+        // capture cadence stays continuous across backgrounds.
+        if recordingStartWallSeconds == nil {
+            recordingStartWallSeconds = ProcessInfo.processInfo.systemUptime
+        }
         log("setupWriter ok dimensions=\(width)x\(height) camera=\(configuredPosition.rawValue)")
         return true
     }
@@ -474,15 +739,30 @@ final class TimelapseManager: NSObject {
             }
             return
         }
-        guard let writer = assetWriter else {
-            if !loggedMissingWriterDrop {
-                loggedMissingWriterDrop = true
-                log("sample dropped: missing writer")
+
+        // After a background (or writer failure) the live writer is gone — open the next segment
+        // on the first frame that flows once we're un-paused. Gated on needsNewSegment, never on a
+        // bare nil writer, so a stray frame after finish/reset can't spawn a phantom segment.
+        if assetWriter == nil {
+            guard needsNewSegment, !isStopping else {
+                if !loggedMissingWriterDrop {
+                    loggedMissingWriterDrop = true
+                    log("sample dropped: no active segment")
+                }
+                return
             }
-            return
+            guard beginNewSegment() else { return }
+            needsNewSegment = false
         }
+
+        guard let writer = assetWriter else { return }
+
+        // Writer died mid-foreground (media-services reset / encoder loss): roll over to a fresh
+        // segment instead of silently dropping every remaining frame.
         guard writer.status != .failed else {
-            log("sample dropped: writer failed error=\(writer.error?.localizedDescription ?? "unknown")")
+            log("writer failed mid-segment error=\(writer.error?.localizedDescription ?? "unknown") — rolling to new segment frames=\(segmentFrameIndex)")
+            discardCurrentSegment()
+            needsNewSegment = true
             return
         }
 
@@ -499,20 +779,21 @@ final class TimelapseManager: NSObject {
         let wallElapsed = currentWallElapsedSeconds()
         guard shouldCaptureFrame(wallElapsed: wallElapsed) else { return }
 
-        let presentationTime = outputPresentationTime(forFrameIndex: framesCaptured)
+        let presentationTime = outputPresentationTime(forFrameIndex: segmentFrameIndex)
 
         guard pixelBufferAdaptor?.append(pixelBuffer, withPresentationTime: presentationTime) == true else {
-            log("append failed frame=\(framesCaptured) writerStatus=\(writer.status.rawValue) inputReady=\(input.isReadyForMoreMediaData)")
+            log("append failed segFrame=\(segmentFrameIndex) total=\(framesCaptured) writerStatus=\(writer.status.rawValue) inputReady=\(input.isReadyForMoreMediaData)")
             return
         }
 
+        segmentFrameIndex += 1
         framesCaptured += 1
         hasWrittenFrame = true
         if framesCaptured == 1 {
             finishStartCompletion(true)
         }
         if framesCaptured <= 3 || framesCaptured == 10 || framesCaptured % 60 == 0 {
-            log("frame appended captured=\(framesCaptured) samples=\(sampleBuffersReceived)")
+            log("frame appended total=\(framesCaptured) segFrame=\(segmentFrameIndex) samples=\(sampleBuffersReceived)")
         }
     }
 
@@ -522,6 +803,29 @@ final class TimelapseManager: NSObject {
         DispatchQueue.main.async {
             completion(started)
         }
+    }
+
+    // MARK: - Background task (keeps finishWriting alive across suspension)
+
+    private func beginBackgroundTaskIfNeeded() {
+        DispatchQueue.main.async {
+            guard self.backgroundTaskId == .invalid else { return }
+            self.backgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "com.lucky7.timelapse.finalize") {
+                self.endBackgroundTaskOnMain()
+            }
+        }
+    }
+
+    private func endBackgroundTask() {
+        DispatchQueue.main.async {
+            self.endBackgroundTaskOnMain()
+        }
+    }
+
+    private func endBackgroundTaskOnMain() {
+        guard backgroundTaskId != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTaskId)
+        backgroundTaskId = .invalid
     }
 
     private func log(_ message: String) {
