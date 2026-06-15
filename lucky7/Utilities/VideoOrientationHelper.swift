@@ -31,19 +31,18 @@ enum VideoOrientationHelper {
     }
 
     /// Matches preview + recorded frames to how the user holds the phone.
+    /// Uses `videoRotationAngle` (iOS 17+) so the preview and the writer
+    /// transform read from the same value across devices and OS versions.
     static func applyToCaptureConnection(_ connection: AVCaptureConnection) async {
         let orientation = await currentInterfaceOrientation()
-        // Use `videoOrientation` instead of rotation angles.
-        // This avoids inverted mappings across iOS versions/devices.
-        if connection.isVideoOrientationSupported {
-            connection.videoOrientation = captureVideoOrientation(from: orientation)
+        let angle = rotationAngle(for: orientation)
+        if connection.isVideoRotationAngleSupported(angle) {
+            connection.videoRotationAngle = angle
         }
     }
 
     static func rotationAngle(for orientation: UIInterfaceOrientation) -> CGFloat {
         switch orientation {
-        // This mapping matches what users expect visually:
-        // holding phone upright (portrait) should produce an upright preview/video.
         case .portrait: return 270
         case .portraitUpsideDown: return 90
         case .landscapeLeft: return 0
@@ -52,17 +51,12 @@ enum VideoOrientationHelper {
         }
     }
 
-    static func captureVideoOrientation(from orientation: UIInterfaceOrientation) -> AVCaptureVideoOrientation {
-        switch orientation {
-        case .portrait: return .portrait
-        case .portraitUpsideDown: return .portraitUpsideDown
-        case .landscapeLeft: return .landscapeLeft
-        case .landscapeRight: return .landscapeRight
-        default: return .portrait
-        }
-    }
-
     /// Rotate/mirror sensor buffers so saved video is upright in the current interface orientation.
+    ///
+    /// The transform is applied to the encoded frame for display. The encoded frame has
+    /// dimensions `W × H` (landscape sensor). After applying this transform, the content
+    /// must land in `[0, H] × [0, W]` — the region that the player will show as a full
+    /// portrait (or landscape) image after applying the rotation.
     static func writerTransform(
         bufferWidth: Int,
         bufferHeight: Int,
@@ -85,94 +79,93 @@ enum VideoOrientationHelper {
     ) -> CGAffineTransform {
         let width = CGFloat(bufferWidth)
         let height = CGFloat(bufferHeight)
-        let isLandscapeBuffer = bufferWidth > bufferHeight
 
         switch orientation {
         case .portrait:
-            if isLandscapeBuffer {
-                return portraitUpFromLandscapeBuffer(
-                    width: width,
-                    height: height,
-                    cameraPosition: cameraPosition
-                )
-            }
-            if cameraPosition == .front {
-                return CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: -width, y: 0)
-            }
-            return .identity
+            return portraitTransform(
+                width: width, height: height, cameraPosition: cameraPosition, inverted: false
+            )
 
         case .portraitUpsideDown:
-            if isLandscapeBuffer {
-                return portraitDownFromLandscapeBuffer(
-                    width: width,
-                    height: height,
-                    cameraPosition: cameraPosition
-                )
-            }
-            if cameraPosition == .front {
-                return CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: -width, y: 0)
-                    .rotated(by: .pi)
-            }
-            return CGAffineTransform(rotationAngle: .pi)
+            return portraitTransform(
+                width: width, height: height, cameraPosition: cameraPosition, inverted: true
+            )
 
         case .landscapeLeft:
-            if cameraPosition == .front {
-                return CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: -width, y: 0)
-            }
-            return .identity
+            return landscapeTransform(
+                width: width, height: height, cameraPosition: cameraPosition, flipped: false
+            )
 
         case .landscapeRight:
-            if isLandscapeBuffer {
-                return CGAffineTransform(rotationAngle: .pi)
-            }
-            return CGAffineTransform(rotationAngle: .pi)
+            return landscapeTransform(
+                width: width, height: height, cameraPosition: cameraPosition, flipped: true
+            )
 
         default:
-            return portraitUpFromLandscapeBuffer(
-                width: width,
-                height: height,
-                cameraPosition: cameraPosition
+            return portraitTransform(
+                width: width, height: height, cameraPosition: cameraPosition, inverted: false
             )
         }
     }
 
-    // MARK: - Portrait from landscape sensor buffer (typical iPhone)
+    // MARK: - Helpers
 
-    private static func portraitUpFromLandscapeBuffer(
+    /// Portrait (upright or upside-down) display. The encoded frame is W×H landscape.
+    /// After the transform, content from `[0, W] × [0, H]` should land in
+    /// `[0, H] × [0, W]` so the player's display rotation shows a full upright frame.
+    private static func portraitTransform(
         width: CGFloat,
         height: CGFloat,
-        cameraPosition: AVCaptureDevice.Position
+        cameraPosition: AVCaptureDevice.Position,
+        inverted: Bool
     ) -> CGAffineTransform {
-        // Standard portrait fix for landscape sensor buffers:
-        // rotate +90° then translate up by -width.
-        let base = CGAffineTransform(rotationAngle: .pi / 2)
-            .translatedBy(x: 0, y: -width)
+        // Back camera base: rotate 90° (CCW for upright, CW for upside-down) and
+        // translate so the rotated content lands in the visible region.
+        //   - upright:        R(90°) * T(0, -W)  →  (x, y) → (W - y, x)
+        //   - upside-down:    T(0, W) * R(-90°)  →  (x, y) → (y, W - x)
+        let base: CGAffineTransform = inverted
+            ? CGAffineTransform(translationX: 0, y: width).rotated(by: -.pi / 2)
+            : CGAffineTransform(rotationAngle: .pi / 2).translatedBy(x: 0, y: -width)
 
-        if cameraPosition == .front {
-            // Mirror for selfie camera after rotation.
-            return base
-                .scaledBy(x: -1, y: 1)
-                .translatedBy(x: -height, y: 0)
-        }
+        guard cameraPosition == .front else { return base }
 
+        // Front camera = base + horizontal mirror. After mirroring, the back-camera
+        // content (which sat in [W-H, W] × [0, W]) lands in [-W, H-W] × [0, W]; a
+        // post-mirror translation of +W brings it back to [0, H] × [0, W].
+        // For upside-down, the content lands in [-H, 0] × [0, W] and needs +H.
+        let postMirrorShift: CGFloat = inverted ? height : width
         return base
+            .scaledBy(x: -1, y: 1)
+            .translatedBy(x: postMirrorShift, y: 0)
     }
 
-    private static func portraitDownFromLandscapeBuffer(
+    /// Landscape (left or right) display. For a landscape-sensor buffer, the
+    /// natural orientation already fills the encoded frame, so:
+    ///   - landscapeLeft  → identity (back) or horizontal mirror (front)
+    ///   - landscapeRight → R(180°) with translation (back) or + mirror (front)
+    private static func landscapeTransform(
         width: CGFloat,
         height: CGFloat,
-        cameraPosition: AVCaptureDevice.Position
+        cameraPosition: AVCaptureDevice.Position,
+        flipped: Bool
     ) -> CGAffineTransform {
-        // Upside-down portrait: rotate -90° then translate left by -height.
-        let base = CGAffineTransform(rotationAngle: -.pi / 2)
-            .translatedBy(x: -height, y: 0)
-
-        if cameraPosition == .front {
-            return base
-                .scaledBy(x: -1, y: 1)
-                .translatedBy(x: -width, y: 0)
+        if !flipped {
+            // landscapeLeft: back = identity, front = horizontal mirror.
+            guard cameraPosition == .front else { return .identity }
+            return CGAffineTransform(scaleX: -1, y: 1)
+                .translatedBy(x: width, y: 0)
         }
 
+        // landscapeRight: rotate 180° around the frame center, then mirror for front.
+        //   - back:  T(W, H) * R(180°)  →  (x, y) → (W - x, H - y)
+        //   - front: back transform, then mirror + shift +W.
+        let base = CGAffineTransform(translationX: width, y: height)
+            .rotated(by: .pi)
+
+        guard cameraPosition == .front else { return base }
+
         return base
+            .scaledBy(x: -1, y: 1)
+            .translatedBy(x: width, y: 0)
     }
 }
