@@ -18,15 +18,20 @@ struct ReasonFormView: View {
     private let titleNavy = Color(red: 0x02/255.0, green: 0x2B/255.0, blue: 0x54/255.0)
 
     var body: some View {
-        VStack(spacing: 16) {
-            reasonCard
-                .frame(maxHeight: .infinity)
-            buttons
+        ResponsiveReader { metrics in
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 16) {
+                    reasonCard
+                        .frame(minHeight: metrics.isShort ? 250 : 360)
+                    buttons
+                }
+                .adaptiveReadableFrame(metrics, maxWidth: metrics.isPad ? 560 : nil)
+                .padding(.horizontal, metrics.horizontalPadding)
+                .padding(.top, metrics.verticalPadding)
+                .padding(.bottom, metrics.safeArea.bottom + 24)
+                .frame(minHeight: metrics.height, alignment: .center)
+            }
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 24)
-        .padding(.bottom, 24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         // keep the card steady — the keyboard covers the buttons instead of squeezing everything up
         .ignoresSafeArea(.keyboard, edges: .bottom)
     }

@@ -25,8 +25,8 @@ final class Session: Identifiable {
     // (stale after any app update) — always read through WrapStorage.resolveVideoURL.
     var wrappedVideoPath: String?
     var photoAssetId: String?      // Photos-library local id for the saved wrap (for deletion)
-    // Filename of the persistent, TEXT-FREE short slice (1080×1920) in Wraps/sessions,
-    // used to build weekly/monthly recaps. Pruned once both recaps exist. Legacy rows
+    // Filename of the persistent full source clip in Wraps/sessions, used only to
+    // generate/retry final wraps and weekly/monthly recaps. Pruned once both recaps exist. Legacy rows
     // hold absolute paths — read through WrapStorage.resolveVideoURL.
     var rawClipPath: String?
 

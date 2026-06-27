@@ -1,6 +1,6 @@
 // Utilities/WrapRollupService.swift
 // Rolls completed weeks/months up into recap videos, then prunes the bulky per-session
-// source slices once they're no longer needed. Safe to call on every launch.
+// source clips once they're no longer needed. Safe to call on every launch.
 
 import Foundation
 import SwiftData
@@ -8,13 +8,13 @@ import SwiftData
 @MainActor
 enum WrapRollupService {
 
-    /// ~2.5s text-free slice kept per session — the durable rollup source.
+    /// Short text-free slice used only as a temporary input while building recaps.
     static let sliceSeconds: Double = 2.5
 
     /// Guards against overlapping runs (launch trigger + screen triggers).
     private static var isRunning = false
 
-    /// Generate any due weekly/monthly recaps and prune slices whose week AND month
+    /// Generate any due weekly/monthly recaps and prune source clips whose week AND month
     /// recaps both exist. No-op when nothing's due. Safe to call from multiple places.
     static func rollUpIfNeeded(context: ModelContext) async {
         guard !isRunning else { return }
@@ -31,7 +31,7 @@ enum WrapRollupService {
         // Older builds stored absolute paths; iOS rotates the container on every app
         // update, so those went stale even though the files survived. Re-link whatever
         // still resolves, rescue any wrap stuck in tmp, and drop recap rows whose video
-        // is gone for good (they regenerate below if their slices survived).
+        // is gone for good (they regenerate below if their sources survived).
         var repaired = false
         for s in sessions {
             if let stored = s.rawClipPath, let url = WrapStorage.resolveVideoURL(stored),
@@ -71,10 +71,12 @@ enum WrapRollupService {
 
         var doneKeys = Set(liveWraps.map { "\($0.kind)/\($0.periodKey)" })
 
-        let withClips = sessions.filter { WrapStorage.exists($0.rawClipPath) }
+        let finalizedWithSources = sessions.filter {
+            WrapStorage.exists($0.wrappedVideoPath) && WrapStorage.exists($0.rawClipPath)
+        }
 
         // --- Weekly recaps for completed weeks ---
-        let byWeek = Dictionary(grouping: withClips) { s in
+        let byWeek = Dictionary(grouping: finalizedWithSources) { s in
             calendar.dateInterval(of: .weekOfYear, for: s.startTime)?.start ?? s.startTime
         }
         for (weekStart, weekSessions) in byWeek {
@@ -90,7 +92,7 @@ enum WrapRollupService {
         }
 
         // --- Monthly recaps for completed months ---
-        let byMonth = Dictionary(grouping: withClips) { s in
+        let byMonth = Dictionary(grouping: finalizedWithSources) { s in
             calendar.date(from: calendar.dateComponents([.year, .month], from: s.startTime)) ?? s.startTime
         }
         for (monthStart, monthSessions) in byMonth {
@@ -105,11 +107,11 @@ enum WrapRollupService {
             }
         }
 
-        // --- Prune: a session's slice can go once BOTH its week and month recaps exist.
+        // --- Prune: a finalized session's source clip can go once BOTH its week and month recaps exist.
         // (A month-straddling week's recap is built later than the month's, so we wait
         //  for both before deleting — never orphaning a recap of its source.)
         var pruned = false
-        for s in withClips {
+        for s in finalizedWithSources {
             let wk = WrapStorage.weekKey(for: s.startTime, calendar: calendar)
             let mk = WrapStorage.monthKey(for: s.startTime, calendar: calendar)
             if doneKeys.contains("weekly/\(wk)"), doneKeys.contains("monthly/\(mk)") {
@@ -155,13 +157,40 @@ enum WrapRollupService {
         kind: String, key: String, start: Date, end: Date,
         sessions: [Session], label: String, context: ModelContext
     ) async -> Bool {
-        let clips = sessions
+        let sources = sessions
             .sorted { $0.startTime < $1.startTime }
-            .compactMap { WrapStorage.resolveVideoURL($0.rawClipPath) }
+            .compactMap { session -> (session: Session, url: URL)? in
+                guard let url = WrapStorage.resolveVideoURL(session.rawClipPath) else { return nil }
+                return (session, url)
+            }
+        guard !sources.isEmpty else { return false }
+
+        var clips: [(session: Session, url: URL)] = []
+        var temporarySlices: [URL] = []
+        defer {
+            for url in temporarySlices {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+
+        for source in sources {
+            let sliceURL = WrapStorage.temporaryRollupSliceURL()
+            let ok = await ExportEngine.shared.generateCleanSlice(
+                rawVideoURL: source.url,
+                sliceSeconds: sliceSeconds,
+                outputURL: sliceURL
+            )
+            guard ok, FileManager.default.fileExists(atPath: sliceURL.path) else {
+                try? FileManager.default.removeItem(at: sliceURL)
+                continue
+            }
+            temporarySlices.append(sliceURL)
+            clips.append((source.session, sliceURL))
+        }
         guard !clips.isEmpty else { return false }
 
-        let totalFocus = sessions.reduce(0.0) { $0 + $1.actualDuration }
-        let count = sessions.count
+        let totalFocus = clips.reduce(0.0) { $0 + $1.session.actualDuration }
+        let count = clips.count
 
         // Header: weekly → the week's date range; monthly → "<Month> Rewind".
         let header: String
@@ -183,7 +212,7 @@ enum WrapRollupService {
         let maxDuration: Double = (kind == "weekly") ? 45 : 60
         let outputURL = WrapStorage.periodURL(kind: kind, key: key)
         let ok = await ExportEngine.shared.generatePeriodWrap(
-            clipURLs: clips, overlay: overlay, maxDurationSeconds: maxDuration, outputURL: outputURL
+            clipURLs: clips.map { $0.url }, overlay: overlay, maxDurationSeconds: maxDuration, outputURL: outputURL
         )
         // Only record after verifying the output — never prune sources for a wrap that
         // didn't actually materialise.

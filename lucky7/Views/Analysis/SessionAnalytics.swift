@@ -104,7 +104,6 @@ struct SessionAnalytics: View {
 
     private var playableVideoURL: URL? {
         WrapStorage.resolveVideoURL(session?.wrappedVideoPath)
-            ?? WrapStorage.resolveVideoURL(session?.rawClipPath)
     }
 
     private func logVideoResolution() {
@@ -120,57 +119,56 @@ struct SessionAnalytics: View {
     // MARK: - Body
 
     var body: some View {
-        ZStack {
-            Color("CanvasBlue")
-                .ignoresSafeArea()
+        ResponsiveReader { metrics in
+            ZStack {
+                AdaptivePatternBackground()
 
-            Image("PatternBackground")
-                .resizable()
-                .scaledToFill()
-                .ignoresSafeArea()
-                .offset(y: -30)
+                VStack {
+                    HStack {
+                        AdaptiveIconButton(systemName: "xmark", action: close)
+                            .accessibilityLabel("Close")
+                            .accessibilityHint("Closes session analytics")
+                            .accessibilityInputLabels(["close", "done", "exit"])
 
-            VStack {
-                HStack {
-                    Button(action: close) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
+                        Spacer()
+
+                        shareButton
                     }
-                    .accessibilityLabel("Close")
-                    .accessibilityHint("Closes session analytics")
-                    .accessibilityInputLabels(["close", "done", "exit"])
+                    .adaptiveReadableFrame(metrics)
+                    .padding(.horizontal, metrics.horizontalPadding)
+                    .padding(.top, max(10, metrics.safeArea.top + 2))
 
                     Spacer()
-
-                    shareButton
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
+                .zIndex(1) // keep the top bar tappable above the ScrollView
 
-                Spacer()
-            }
-            .zIndex(1) // keep the top bar tappable above the ScrollView
-
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 24) {
-                    statsCard
-                    detailCard
+                AdaptiveScrollContent(metrics: metrics, bottomPadding: 110) {
+                    if metrics.prefersTwoColumns {
+                        HStack(alignment: .top, spacing: 24) {
+                            statsCard
+                                .frame(maxWidth: metrics.cardMaxWidth)
+                            detailCard
+                                .frame(maxWidth: metrics.cardMaxWidth)
+                        }
+                    } else {
+                        VStack(spacing: metrics.isPad ? 28 : 24) {
+                            statsCard
+                            detailCard
+                        }
+                    }
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 110)
-                .padding(.top, 24)
-            }
 
-            VStack {
-                Spacer()
-                deleteButton
-            }
+                VStack {
+                    Spacer()
+                    deleteButton
+                        .frame(maxWidth: metrics.isPad ? 420 : .infinity)
+                        .padding(.horizontal, metrics.horizontalPadding)
+                        .padding(.bottom, max(20, metrics.safeArea.bottom + 12))
+                }
 
-            if showDeleteConfirm {
-                deleteConfirmation
+                if showDeleteConfirm {
+                    deleteConfirmation
+                }
             }
         }
         .navigationBarBackButtonHidden(true)

@@ -159,9 +159,14 @@ struct Loading: View {
 /// swap them as needed.
 struct FloatingTabBar: View {
     @Binding var selection: Int
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    private var compactHeight: Bool {
+        verticalSizeClass == .compact
+    }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: compactHeight ? 6 : 8) {
             tabButton(index: 0, systemImage: "timer")
             tabButton(index: 1, systemImage: "calendar.badge.clock")
         }
@@ -183,9 +188,9 @@ struct FloatingTabBar: View {
             withAnimation(.easeInOut(duration: 0.2)) { selection = index }
         } label: {
             Image(systemName: systemImage)
-                .font(.system(size: 20, weight: .semibold))
+                .font(.system(size: compactHeight ? 18 : 20, weight: .semibold))
                 .foregroundColor(selection == index ? .white : .black)
-                .frame(width: 64, height: 48)
+                .frame(width: compactHeight ? 56 : 64, height: compactHeight ? 44 : 48)
                 .background(
                     Capsule().fill(selection == index ? Color(red: 9 / 255, green: 9 / 255, blue: 9 / 255) : Color.clear)
                 )

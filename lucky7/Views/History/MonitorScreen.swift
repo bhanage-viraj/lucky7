@@ -18,90 +18,39 @@ struct MonitorScreen: View {
     /// 7-day weeks. A week that straddles a month boundary is kept whole and filed
     /// under the month most of its sessions fall in, so there's no stray fragment week.
     private var monthGroups: [MonthGroup] {
-        let calendar = Calendar.current
-        let now = Date()
-        let currentMonthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now))
-        let currentWeekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start
-
-        // 1. Group sessions into real 7-day calendar weeks.
-        let byWeekStart = Dictionary(grouping: sessions) { session -> Date in
-            calendar.dateInterval(of: .weekOfYear, for: session.startTime)?.start ?? session.startTime
-        }
-
-        // 2. For each week, choose the month most of its sessions land in (ties -> later month).
-        let pendingWeeks = byWeekStart.map { (weekStart, weekSessions) -> (weekStart: Date, monthStart: Date, sessions: [Session], total: TimeInterval, isCurrent: Bool) in
-            let sorted = weekSessions.sorted { $0.startTime > $1.startTime }
-            let total = sorted.reduce(0) { $0 + $1.actualDuration }
-            let byMonth = Dictionary(grouping: sorted) { session in
-                calendar.date(from: calendar.dateComponents([.year, .month], from: session.startTime)) ?? session.startTime
-            }
-            let monthStart = byMonth.max {
-                $0.value.count != $1.value.count ? $0.value.count < $1.value.count : $0.key < $1.key
-            }?.key ?? weekStart
-            return (weekStart, monthStart, sorted, total, weekStart == currentWeekStart)
-        }
-
-        // 3. Bucket weeks by month; number them oldest-first, display newest-first.
-        let byMonth = Dictionary(grouping: pendingWeeks) { $0.monthStart }
-
-        return byMonth.keys.sorted(by: >).map { monthStart in
-            let weeksAsc = (byMonth[monthStart] ?? []).sorted { $0.weekStart < $1.weekStart }
-            let weeks: [WeekGroup] = weeksAsc.enumerated()
-                .map { index, week in
-                    WeekGroup(
-                        id: week.weekStart,
-                        number: index + 1,
-                        sessions: week.sessions,
-                        totalDuration: week.total,
-                        isCurrent: week.isCurrent
-                    )
-                }
-                .sorted { $0.id > $1.id }
-            let monthTotal = weeksAsc.reduce(0) { $0 + $1.total }
-            return MonthGroup(
-                id: monthStart,
-                weeks: weeks,
-                totalDuration: monthTotal,
-                isCurrentMonth: monthStart == currentMonthStart
-            )
-        }
+        HistoryTimelineViewModel.monthGroups(from: sessions)
     }
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                Color("CanvasBlue")
-                    .ignoresSafeArea()
+            ResponsiveReader { metrics in
+                ZStack {
+                    AdaptivePatternBackground(yOffset: 10)
 
-                Image("PatternBackground")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .ignoresSafeArea()
-                    .offset(y: 10)
+                    VStack(spacing: 0) {
+                        header(metrics: metrics)
 
-                VStack(spacing: 0) {
-                    header
-
-                    if monthGroups.isEmpty {
-                        emptyState
-                    } else {
-                        feed
+                        if monthGroups.isEmpty {
+                            emptyState
+                                .adaptiveReadableFrame(metrics, maxWidth: metrics.isPad ? 560 : nil)
+                        } else {
+                            feed(metrics: metrics)
+                        }
                     }
                 }
-            }
-            .overlay {
-                if weeklyNotReady {
-                    WrapNotReadyModal(
-                        title: "Not ready yet",
-                        message: "Your weekly analytics isn't ready yet. Please wait until the end of the week.",
-                        onDismiss: { weeklyNotReady = false }
-                    )
+                .overlay {
+                    if weeklyNotReady {
+                        WrapNotReadyModal(
+                            title: "Not ready yet",
+                            message: "Your weekly analytics isn't ready yet. Please wait until the end of the week.",
+                            onDismiss: { weeklyNotReady = false }
+                        )
+                    }
                 }
-            }
-            .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(isPresented: $showSearch) {
-                SessionSearchView()
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(isPresented: $showSearch) {
+                    SessionSearchView()
+                }
             }
         }
         .task {
@@ -115,7 +64,7 @@ struct MonitorScreen: View {
 
     // MARK: - Header
 
-    private var header: some View {
+    private func header(metrics: ResponsiveMetrics) -> some View {
         HStack {
             Button {
                 showSettings = true
@@ -147,14 +96,15 @@ struct MonitorScreen: View {
             .accessibilityHint("Search by title or date")
             .accessibilityInputLabels(["search", "find session"])
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 36)
+        .adaptiveReadableFrame(metrics, maxWidth: metrics.prefersTwoColumns ? 1120 : (metrics.isPad ? 720 : nil))
+        .padding(.horizontal, metrics.horizontalPadding)
+        .padding(.top, max(20, metrics.safeArea.top + 8))
         .padding(.bottom, 20)
     }
 
     // MARK: - Feed
 
-    private var feed: some View {
+    private func feed(metrics: ResponsiveMetrics) -> some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 16) {
                 ForEach(monthGroups) { month in
@@ -188,8 +138,9 @@ struct MonitorScreen: View {
                     }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 110)
+            .adaptiveReadableFrame(metrics, maxWidth: metrics.prefersTwoColumns ? 1120 : (metrics.isPad ? 720 : nil))
+            .padding(.horizontal, metrics.horizontalPadding)
+            .padding(.bottom, metrics.safeArea.bottom + 110)
         }
     }
 
@@ -412,8 +363,7 @@ struct SessionRow: View {
         session.title.isEmpty ? "Untitled Session" : session.title
     }
 
-    /// Extracts a poster frame from the saved wrapped video, falling back to the
-    /// retained raw clip when the final wrap has not been generated yet.
+    /// Extracts a poster frame from the saved wrapped video.
     private func loadPosterFrame() async {
         guard posterFrame == nil, let url = posterSourceURL else { return }
         let frame = await withCheckedContinuation { continuation in
@@ -427,11 +377,10 @@ struct SessionRow: View {
 
     private var posterSourceURL: URL? {
         WrapStorage.resolveVideoURL(session.wrappedVideoPath)
-            ?? WrapStorage.resolveVideoURL(session.rawClipPath)
     }
 
     private var posterTaskKey: String {
-        "\(session.wrappedVideoPath ?? "")|\(session.rawClipPath ?? "")"
+        session.wrappedVideoPath ?? ""
     }
 
     var body: some View {

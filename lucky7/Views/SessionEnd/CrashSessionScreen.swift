@@ -137,83 +137,96 @@ struct CrashSessionScreen: View {
     }
 
     private var celebrationView: some View {
-        ZStack {
-            LinearGradient(
+        ResponsiveReader { metrics in
+            ZStack {
+                LinearGradient(
                     colors: [Color(hex: "003261"), Color(hex: "0B1F32")],
                     startPoint: .top,
                     endPoint: .bottom
                 )
                 .ignoresSafeArea()
 
-            Image("PatternBackgroundSmall")
-                .ignoresSafeArea()
-                .accessibilityDecorative()
-
-            VStack {
-                Spacer()
-
-                ZStack {
-                    Text("🤕")
-                        .font(.system(size: 112))
-                        .offset(x: 68, y: -32)
-                        .rotationEffect(.degrees(appeared ? 9 : 30))
-                        .opacity(appeared ? 1 : 0)
-                        .scaleEffect(appeared ? 1 : 1.4)
-                        .animation(.spring(response: 0.5, dampingFraction: 0.4).delay(0.2), value: appeared)
-                        .accessibilityDecorative()
-
-                    Image(.titleEndSession)
-                        .opacity(appeared ? 1 : 0)
-                        .offset(y: appeared ? 0 : -20)
-                        .blur(radius: appeared ? 0 : 6)
-                        .animation(.spring(response: 0.6, dampingFraction: 0.7).delay(0.05), value: appeared)
-                        .accessibilityDecorative()
-                }
-                .offset(x: shake ? -8 : 0)
-                .animation(
-                    .interpolatingSpring(stiffness: 600, damping: 8)
-                    .repeatCount(4, autoreverses: true)
-                    .delay(0.1),
-                    value: shake
-                )
-
-                Text("Oh no, looks like you got distracted this session. Take a moment, reset, and try again.")
-                    .font(.system(size: 14))
-                    .multilineTextAlignment(.center)
-                    .frame(width: 240)
-                    .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : 16)
-                    .animation(.easeOut(duration: 0.6).delay(0.4), value: appeared)
-
-                Color.clear
-                    .frame(height: 2)
-
-                Image(systemName: "car.side.rear.and.collision.and.car.side.front")
-                    .font(.system(size: 40))
-                    .opacity(appeared ? 1 : 0)
-                    .scaleEffect(appeared ? 1 : 0.4)
-                    .animation(.spring(response: 0.5, dampingFraction: 0.4).delay(0.6), value: appeared)
+                Image("PatternBackgroundSmall")
+                    .resizable()
+                    .scaledToFill()
+                    .ignoresSafeArea()
                     .accessibilityDecorative()
 
-                Spacer()
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: metrics.isShort ? 12 : 18) {
+                        Spacer(minLength: metrics.isShort ? 18 : 54)
 
-                Button(action: advanceToDetails) {
-                    Text(canAdvanceToDetails ? "Tap to go to the next screen" : "Preparing preview...")
-                        .font(.system(size: 14))
-                        .opacity(appeared ? 0.8 : 0)
-                        .animation(.easeIn(duration: 0.5).delay(0.9), value: appeared)
+                        ZStack {
+                            Text("🤕")
+                                .font(.system(size: metrics.scaled(112, min: 76, max: 118)))
+                                .offset(x: metrics.isNarrow ? 48 : 68, y: metrics.isShort ? -24 : -32)
+                                .rotationEffect(.degrees(appeared ? 9 : 30))
+                                .opacity(appeared ? 1 : 0)
+                                .scaleEffect(appeared ? 1 : 1.4)
+                                .animation(.spring(response: 0.5, dampingFraction: 0.4).delay(0.2), value: appeared)
+                                .accessibilityDecorative()
+
+                            Image(.titleEndSession)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: metrics.isPad ? 410 : min(metrics.width - metrics.horizontalPadding * 2, 340))
+                                .opacity(appeared ? 1 : 0)
+                                .offset(y: appeared ? 0 : -20)
+                                .blur(radius: appeared ? 0 : 6)
+                                .animation(.spring(response: 0.6, dampingFraction: 0.7).delay(0.05), value: appeared)
+                                .accessibilityDecorative()
+                        }
+                        .offset(x: shake ? -8 : 0)
+                        .animation(
+                            .interpolatingSpring(stiffness: 600, damping: 8)
+                            .repeatCount(4, autoreverses: true)
+                            .delay(0.1),
+                            value: shake
+                        )
+
+                        Text("Oh no, looks like you got distracted this session. Take a moment, reset, and try again.")
+                            .font(.system(size: 14))
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: metrics.isPad ? 340 : 260)
+                            .opacity(appeared ? 1 : 0)
+                            .offset(y: appeared ? 0 : 16)
+                            .animation(.easeOut(duration: 0.6).delay(0.4), value: appeared)
+
+                        Image(systemName: "car.side.rear.and.collision.and.car.side.front")
+                            .font(.system(size: metrics.scaled(40, min: 32, max: 46)))
+                            .opacity(appeared ? 1 : 0)
+                            .scaleEffect(appeared ? 1 : 0.4)
+                            .animation(.spring(response: 0.5, dampingFraction: 0.4).delay(0.6), value: appeared)
+                            .accessibilityDecorative()
+
+                        Spacer(minLength: metrics.isShort ? 18 : 54)
+
+                        Button(action: advanceToDetails) {
+                            Text(canAdvanceToDetails ? "Tap to go to the next screen" : "Preparing preview...")
+                                .font(.system(size: 14))
+                                .multilineTextAlignment(.center)
+                                .frame(minHeight: 44)
+                                .opacity(appeared ? 0.8 : 0)
+                                .animation(.easeIn(duration: 0.5).delay(0.9), value: appeared)
+                        }
+                        .disabled(!canAdvanceToDetails)
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Continue to session details")
+                        .accessibilityHint("Opens the screen to title and save your session")
+                        .accessibilityInputLabels(["continue", "next", "session details"])
+                    }
+                    .foregroundStyle(.white)
+                    .adaptiveReadableFrame(metrics, maxWidth: metrics.isPad ? 560 : nil)
+                    .frame(minHeight: metrics.height - metrics.safeArea.top - metrics.safeArea.bottom)
+                    .padding(.horizontal, metrics.horizontalPadding)
+                    .padding(.top, metrics.safeArea.top)
+                    .padding(.bottom, max(24, metrics.safeArea.bottom + 16))
                 }
-                .disabled(!canAdvanceToDetails)
-                .buttonStyle(.plain)
-                .accessibilityLabel("Continue to session details")
-                .accessibilityHint("Opens the screen to title and save your session")
-                .accessibilityInputLabels(["continue", "next", "session details"])
             }
-            .foregroundStyle(.white)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: advanceToDetails)
+            .accessibilityAddTraits(.isButton)
         }
-        .contentShape(Rectangle())
-        .onTapGesture(perform: advanceToDetails)
-        .accessibilityAddTraits(.isButton)
     }
 
     private func advanceToDetails() {
@@ -222,7 +235,7 @@ struct CrashSessionScreen: View {
             RecordingDiagnostics.log("CrashSession blocked details: preview not ready")
             return
         }
-        showDetails(reason: videoFrames.isEmpty ? "preview fallback" : "preview ready")
+        showDetails(reason: videoFrames.isEmpty ? "preview timeout" : "preview ready")
     }
 
     private func startPreviewFallbackTimer() {

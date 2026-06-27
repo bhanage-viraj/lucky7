@@ -138,72 +138,78 @@ struct FinishSessionScreen: View {
     }
 
     private var celebrationView: some View {
-        ZStack {
-            Color("CanvasBlue")
-                .ignoresSafeArea()
+        ResponsiveReader { metrics in
+            ZStack {
+                AdaptivePatternBackground(smallPattern: true, yOffset: 0)
 
-            Image("PatternBackgroundSmall")
-                .ignoresSafeArea()
-                .accessibilityDecorative()
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: metrics.isShort ? 12 : 18) {
+                        Spacer(minLength: metrics.isShort ? 18 : 56)
 
-            VStack {
-                Spacer()
+                        ZStack {
+                            Text("🤩")
+                                .font(.system(size: metrics.scaled(40, min: 34, max: 48)))
+                                .offset(y: metrics.isShort ? -44 : -60)
+                                .rotationEffect(.degrees(-6))
+                                .opacity(appeared ? 1 : 0)
+                                .offset(y: appeared ? 0 : 10)
+                                .animation(.spring(response: 0.6, dampingFraction: 0.7).delay(0.3), value: appeared)
+                                .accessibilityDecorative()
 
-                ZStack {
-                    Text("🤩")
-                        .font(.system(size: 40))
-                        .offset(y: -60)
-                        .rotationEffect(.degrees(-6))
-                        .opacity(appeared ? 1 : 0)
-                        .offset(y: appeared ? 0 : 10)
-                        .animation(.spring(response: 0.6, dampingFraction: 0.7).delay(0.3), value: appeared)
-                        .accessibilityDecorative()
+                            Image(.titleFinishSession)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: metrics.isPad ? 390 : min(metrics.width - metrics.horizontalPadding * 2, 330))
+                                .scaleEffect(appeared ? 1 : 0.7)
+                                .opacity(appeared ? 1 : 0)
+                                .blur(radius: appeared ? 0 : 8)
+                                .animation(.spring(response: 0.8, dampingFraction: 0.6).delay(0.1), value: appeared)
+                                .accessibilityDecorative()
+                        }
 
-                    Image(.titleFinishSession)
-                        .scaleEffect(appeared ? 1 : 0.7)
-                        .opacity(appeared ? 1 : 0)
-                        .blur(radius: appeared ? 0 : 8)
-                        .animation(.spring(response: 0.8, dampingFraction: 0.6).delay(0.1), value: appeared)
-                        .accessibilityDecorative()
+                        Text("You stayed on track and got things done. Reflect on your session and see your focus stats.")
+                            .font(.system(size: 14))
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: metrics.isPad ? 340 : 260)
+                            .opacity(appeared ? 1 : 0)
+                            .offset(y: appeared ? 0 : 16)
+                            .animation(.easeOut(duration: 0.6).delay(0.4), value: appeared)
+
+                        Image(systemName: "flag.pattern.checkered.2.crossed")
+                            .font(.system(size: metrics.scaled(40, min: 32, max: 46)))
+                            .opacity(appeared ? 1 : 0)
+                            .scaleEffect(appeared ? 1 : 0.5)
+                            .animation(.spring(response: 0.7, dampingFraction: 0.5).delay(0.55), value: appeared)
+                            .accessibilityDecorative()
+
+                        Spacer(minLength: metrics.isShort ? 18 : 56)
+
+                        Button(action: advanceToDetails) {
+                            Text(canAdvanceToDetails ? "Tap to go to the next screen" : "Preparing preview...")
+                                .font(.system(size: 14))
+                                .multilineTextAlignment(.center)
+                                .frame(minHeight: 44)
+                                .opacity(appeared ? 0.8 : 0)
+                                .animation(.easeIn(duration: 0.5).delay(0.8), value: appeared)
+                        }
+                        .disabled(!canAdvanceToDetails)
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Continue to session details")
+                        .accessibilityHint("Opens the screen to title and save your session")
+                        .accessibilityInputLabels(["continue", "next", "session details", "tap"])
+                    }
+                    .foregroundStyle(.white)
+                    .adaptiveReadableFrame(metrics, maxWidth: metrics.isPad ? 560 : nil)
+                    .frame(minHeight: metrics.height - metrics.safeArea.top - metrics.safeArea.bottom)
+                    .padding(.horizontal, metrics.horizontalPadding)
+                    .padding(.top, metrics.safeArea.top)
+                    .padding(.bottom, max(24, metrics.safeArea.bottom + 16))
                 }
-
-                Text("You stayed on track and got things done. Reflect on your session and see your focus stats.")
-                    .font(.system(size: 14))
-                    .multilineTextAlignment(.center)
-                    .frame(width: 240)
-                    .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared ? 0 : 16)
-                    .animation(.easeOut(duration: 0.6).delay(0.4), value: appeared)
-
-                Color.clear
-                    .frame(height: 2)
-
-                Image(systemName: "flag.pattern.checkered.2.crossed")
-                    .font(.system(size: 40))
-                    .opacity(appeared ? 1 : 0)
-                    .scaleEffect(appeared ? 1 : 0.5)
-                    .animation(.spring(response: 0.7, dampingFraction: 0.5).delay(0.55), value: appeared)
-                    .accessibilityDecorative()
-
-                Spacer()
-
-                Button(action: advanceToDetails) {
-                    Text(canAdvanceToDetails ? "Tap to go to the next screen" : "Preparing preview...")
-                        .font(.system(size: 14))
-                        .opacity(appeared ? 0.8 : 0)
-                        .animation(.easeIn(duration: 0.5).delay(0.8), value: appeared)
-                }
-                .disabled(!canAdvanceToDetails)
-                .buttonStyle(.plain)
-                .accessibilityLabel("Continue to session details")
-                .accessibilityHint("Opens the screen to title and save your session")
-                .accessibilityInputLabels(["continue", "next", "session details", "tap"])
             }
-            .foregroundStyle(.white)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: advanceToDetails)
+            .accessibilityAddTraits(.isButton)
         }
-        .contentShape(Rectangle())
-        .onTapGesture(perform: advanceToDetails)
-        .accessibilityAddTraits(.isButton)
     }
 
     private func advanceToDetails() {
@@ -212,7 +218,7 @@ struct FinishSessionScreen: View {
             RecordingDiagnostics.log("FinishSession blocked details: preview not ready")
             return
         }
-        showDetails(reason: videoFrames.isEmpty ? "preview fallback" : "preview ready")
+        showDetails(reason: videoFrames.isEmpty ? "preview timeout" : "preview ready")
     }
 
     private func startPreviewFallbackTimer() {

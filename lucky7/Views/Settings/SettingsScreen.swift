@@ -20,22 +20,20 @@ struct SettingsScreen: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                Color("CanvasBlue").ignoresSafeArea()
-                Image("PatternBackground")
-                    .resizable()
-                    .scaledToFill()
-                    .ignoresSafeArea()
-                    .accessibilityDecorative()
+            ResponsiveReader { metrics in
+                ZStack {
+                    AdaptivePatternBackground()
 
-                VStack(spacing: 0) {
-                    header
+                    VStack(spacing: 0) {
+                        header(metrics: metrics)
 
-                    settingsCard
-                        .padding(.horizontal, 20)
-                        .padding(.top, 28)
+                        settingsCard
+                            .adaptiveReadableFrame(metrics, maxWidth: metrics.isPad ? 560 : nil)
+                            .padding(.horizontal, metrics.horizontalPadding)
+                            .padding(.top, metrics.isShort ? 18 : 28)
 
-                    Spacer()
+                        Spacer()
+                    }
                 }
             }
             .navigationBarBackButtonHidden(true)
@@ -58,7 +56,7 @@ struct SettingsScreen: View {
         }
     }
 
-    private var header: some View {
+    private func header(metrics: ResponsiveMetrics) -> some View {
         ZStack {
             Text("Settings")
                 .font(.system(size: 18, weight: .semibold))
@@ -75,8 +73,9 @@ struct SettingsScreen: View {
                 Spacer()
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
+        .adaptiveReadableFrame(metrics, maxWidth: metrics.isPad ? 560 : nil)
+        .padding(.horizontal, metrics.horizontalPadding)
+        .padding(.top, max(8, metrics.safeArea.top + 2))
     }
 
     private var settingsCard: some View {

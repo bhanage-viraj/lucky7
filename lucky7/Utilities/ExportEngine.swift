@@ -188,26 +188,10 @@ final class ExportEngine {
         return (outputURL, stitchedSeconds)
     }
 
-    /// Fallback when stitching fails: the single longest segment (most footage we can salvage),
-    /// with its measured duration so the caller can derive a matching frame count.
-    func longestSegment(_ urls: [URL]) async -> (url: URL, durationSeconds: Double)? {
-        var best: URL?
-        var bestSeconds = -1.0
-        for url in urls {
-            let seconds = (try? await AVURLAsset(url: url).load(.duration)).map { CMTimeGetSeconds($0) } ?? 0
-            if seconds > bestSeconds {
-                bestSeconds = seconds
-                best = url
-            }
-        }
-        guard let best, bestSeconds > 0 else { return nil }
-        return (best, bestSeconds)
-    }
-
     // MARK: - Period recaps (weekly / monthly)
 
     /// Produces a short, TEXT-FREE, portrait-normalised (1080×1920) slice of a raw
-    /// timelapse — the durable per-session source for weekly/monthly recaps.
+    /// timelapse for weekly/monthly recaps.
     func generateCleanSlice(rawVideoURL: URL, sliceSeconds: Double, outputURL: URL) async -> Bool {
         let asset = AVURLAsset(url: rawVideoURL)
         do {
@@ -241,7 +225,7 @@ final class ExportEngine {
         }
     }
 
-    /// Concatenates the (already 1080×1920, text-free, 60 fps) per-session slices into one
+    /// Concatenates the temporary (already 1080×1920, text-free, 60 fps) per-session slices into one
     /// video and burns a single period-level overlay (total focus time / period label /
     /// footer). Each clip is trimmed so the whole recap never exceeds `maxDurationSeconds`.
     func generatePeriodWrap(
