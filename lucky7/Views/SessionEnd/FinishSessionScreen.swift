@@ -19,10 +19,7 @@ struct FinishSessionScreen: View {
     private var videoFrames: [UIImage] { sessionRecording.previewFrames }
     private let stepAnimation = Animation.spring(response: 0.44, dampingFraction: 0.9, blendDuration: 0.08)
     private var stepTransition: AnyTransition {
-        .asymmetric(
-            insertion: .move(edge: .trailing).combined(with: .opacity),
-            removal: .move(edge: .leading).combined(with: .opacity)
-        )
+        .opacity
     }
 
     @State private var appeared = false
@@ -139,6 +136,8 @@ struct FinishSessionScreen: View {
 
     private var celebrationView: some View {
         ResponsiveReader { metrics in
+            let contentWidth = min(max(metrics.width - metrics.horizontalPadding * 2, 1), metrics.isPad ? 560 : 340)
+            let titleWidth = min(contentWidth, metrics.isPad ? 390 : 330)
             ZStack {
                 AdaptivePatternBackground(smallPattern: true, yOffset: 0)
 
@@ -159,7 +158,7 @@ struct FinishSessionScreen: View {
                             Image(.titleFinishSession)
                                 .resizable()
                                 .scaledToFit()
-                                .frame(maxWidth: metrics.isPad ? 390 : min(metrics.width - metrics.horizontalPadding * 2, 330))
+                                .frame(width: titleWidth)
                                 .scaleEffect(appeared ? 1 : 0.7)
                                 .opacity(appeared ? 1 : 0)
                                 .blur(radius: appeared ? 0 : 8)
@@ -170,7 +169,7 @@ struct FinishSessionScreen: View {
                         Text("You stayed on track and got things done. Reflect on your session and see your focus stats.")
                             .font(.system(size: 14))
                             .multilineTextAlignment(.center)
-                            .frame(maxWidth: metrics.isPad ? 340 : 260)
+                            .frame(maxWidth: min(contentWidth, metrics.isPad ? 340 : 280))
                             .opacity(appeared ? 1 : 0)
                             .offset(y: appeared ? 0 : 16)
                             .animation(.easeOut(duration: 0.6).delay(0.4), value: appeared)
@@ -188,6 +187,8 @@ struct FinishSessionScreen: View {
                             Text(canAdvanceToDetails ? "Tap to go to the next screen" : "Preparing preview...")
                                 .font(.system(size: 14))
                                 .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.85)
                                 .frame(minHeight: 44)
                                 .opacity(appeared ? 0.8 : 0)
                                 .animation(.easeIn(duration: 0.5).delay(0.8), value: appeared)
@@ -199,7 +200,8 @@ struct FinishSessionScreen: View {
                         .accessibilityInputLabels(["continue", "next", "session details", "tap"])
                     }
                     .foregroundStyle(.white)
-                    .adaptiveReadableFrame(metrics, maxWidth: metrics.isPad ? 560 : nil)
+                    .frame(width: contentWidth)
+                    .frame(maxWidth: .infinity)
                     .frame(minHeight: metrics.height - metrics.safeArea.top - metrics.safeArea.bottom)
                     .padding(.horizontal, metrics.horizontalPadding)
                     .padding(.top, metrics.safeArea.top)

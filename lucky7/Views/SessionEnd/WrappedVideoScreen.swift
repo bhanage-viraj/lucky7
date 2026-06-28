@@ -116,26 +116,29 @@ struct WrappedVideoScreen: View {
 
     var body: some View {
         ResponsiveReader { metrics in
-            ZStack {
+            ZStack(alignment: .top) {
                 AdaptivePatternBackground()
 
                 VStack(spacing: 0) {
-                    topBar
-                        .padding(.horizontal, metrics.horizontalPadding)
-                        .padding(.top, max(10, metrics.safeArea.top + 2))
-
-                    Spacer(minLength: metrics.isLandscape ? 8 : 16)
+                    Spacer(minLength: metrics.isLandscape ? 54 : metrics.safeArea.top + 44)
 
                     mediaCard(metrics: metrics)
                         .padding(.horizontal, metrics.horizontalPadding)
                         .layoutPriority(1)
 
-                    Spacer(minLength: metrics.isLandscape ? 8 : 16)
+                    Spacer(minLength: metrics.isLandscape ? 8 : 12)
 
                     playPauseButton
-                        .padding(.bottom, max(20, metrics.safeArea.bottom + 10))
+                        .padding(.bottom, max(16, metrics.safeArea.bottom + 8))
                 }
+                .frame(width: metrics.width, height: metrics.height)
+
+                topBar
+                    .padding(.horizontal, metrics.horizontalPadding)
+                    .padding(.top, max(6, metrics.safeArea.top - 6))
+                    .zIndex(2)
             }
+            .frame(width: metrics.width, height: metrics.height, alignment: .top)
         }
         .frame(maxWidth: .infinity)
         .navigationBarBackButtonHidden(true)
@@ -307,7 +310,7 @@ struct WrappedVideoScreen: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 32))
             )
-            .frame(width: metrics.portraitMediaWidth(maxPhone: 340, maxPad: 460, reservedHeight: metrics.isLandscape ? 130 : 190))
+            .frame(width: metrics.portraitMediaWidth(maxPhone: metrics.isNarrow ? 340 : 370, maxPad: 520, reservedHeight: metrics.isLandscape ? 120 : 138))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Session wrap video")
             .accessibilityValue("\(displayTitle), \(durationText), \(dateText)")

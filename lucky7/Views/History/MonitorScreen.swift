@@ -24,20 +24,28 @@ struct MonitorScreen: View {
     var body: some View {
         NavigationStack {
             ResponsiveReader { metrics in
-                ZStack {
+                ZStack(alignment: .top) {
                     AdaptivePatternBackground(yOffset: 10)
 
                     VStack(spacing: 0) {
                         header(metrics: metrics)
 
                         if monthGroups.isEmpty {
-                            emptyState
-                                .adaptiveReadableFrame(metrics, maxWidth: metrics.isPad ? 560 : nil)
+                            Spacer(minLength: 0)
                         } else {
                             feed(metrics: metrics)
                         }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                    if monthGroups.isEmpty {
+                        emptyStateLayer(metrics: metrics)
+                            .padding(.horizontal, metrics.horizontalPadding)
+                            .zIndex(1)
+                            .allowsHitTesting(false)
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .overlay {
                     if weeklyNotReady {
                         WrapNotReadyModal(
@@ -50,6 +58,7 @@ struct MonitorScreen: View {
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(isPresented: $showSearch) {
                     SessionSearchView()
+                        .hidesFloatingTabBar()
                 }
             }
         }
@@ -146,24 +155,67 @@ struct MonitorScreen: View {
 
     // MARK: - Empty state
 
-    private var emptyState: some View {
-        VStack(spacing: 8) {
-            Spacer()
-            Image(systemName: "play.tv")
-                .font(.system(size: 36))
-                .foregroundColor(.white.opacity(0.7))
-                .accessibilityDecorative()
-            Text("No sessions yet")
-                .font(.custom("Special Gothic Expanded One", size: 23))
-                .foregroundColor(.white)
-            Text("Complete a Rush Hour session to save your \ntimelapses and reviews here.")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(.white.opacity(0.7))
-                .multilineTextAlignment(.center)
-            Spacer()
+    private func emptyStateLayer(metrics: ResponsiveMetrics) -> some View {
+        Group {
+            if metrics.isLandscape {
+                emptyStateContent(metrics: metrics)
+                    .frame(width: min(metrics.width - metrics.horizontalPadding * 2, metrics.isPad ? 560 : 520))
+                    .position(x: metrics.width / 2, y: metrics.height * 0.48)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    emptyStateContent(metrics: metrics)
+                        .frame(maxWidth: metrics.isPad ? 560 : min(metrics.width - metrics.horizontalPadding * 2, 520))
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, emptyStateTopReserve(metrics))
+                .padding(.bottom, metrics.safeArea.bottom + 128)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
-        .padding(.horizontal, 40)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func emptyStateTopReserve(_ metrics: ResponsiveMetrics) -> CGFloat {
+        if metrics.isLandscape && !metrics.isPad { return 64 }
+        return metrics.safeArea.top + 72
+    }
+
+    private func emptyStateContent(metrics: ResponsiveMetrics) -> some View {
+        Group {
+            if metrics.isLandscape && !metrics.isPad {
+                VStack(spacing: 5) {
+                    Image(systemName: "play.tv")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white.opacity(0.75))
+                        .accessibilityDecorative()
+                    Text("No sessions yet")
+                        .font(.custom("Special Gothic Expanded One", size: 17))
+                        .foregroundColor(.white)
+                    Text("Complete a Rush Hour session to save timelapses and reviews here.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white.opacity(0.72))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                }
+                .padding(.horizontal, 48)
+            } else {
+                VStack(spacing: 8) {
+                    Image(systemName: "play.tv")
+                        .font(.system(size: 36))
+                        .foregroundColor(.white.opacity(0.7))
+                        .accessibilityDecorative()
+                    Text("No sessions yet")
+                        .font(.custom("Special Gothic Expanded One", size: 23))
+                        .foregroundColor(.white)
+                    Text("Complete a Rush Hour session to save your \ntimelapses and reviews here.")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 40)
+            }
+        }
     }
 }
 

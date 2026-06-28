@@ -102,6 +102,7 @@ struct AdaptivePatternBackground: View {
 
 struct AdaptiveScrollContent<Content: View>: View {
     let metrics: ResponsiveMetrics
+    var topPadding: CGFloat?
     var bottomPadding: CGFloat = 40
     var maxWidth: CGFloat?
     var showsIndicators = false
@@ -113,7 +114,7 @@ struct AdaptiveScrollContent<Content: View>: View {
                 .frame(maxWidth: maxWidth ?? metrics.contentMaxWidth)
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, metrics.horizontalPadding)
-                .padding(.top, metrics.verticalPadding)
+                .padding(.top, topPadding ?? metrics.verticalPadding)
                 .padding(.bottom, bottomPadding + metrics.safeArea.bottom)
         }
     }

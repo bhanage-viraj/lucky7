@@ -47,11 +47,13 @@ struct Loading: View {
                     // Both screens stay alive so each keeps its own navigation
                     // stack and scroll state; only the selected one is shown.
                     HomePage(isActiveTab: selectedTab == 0)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .opacity(selectedTab == 0 ? 1 : 0)
                         .allowsHitTesting(selectedTab == 0)
                         .zIndex(selectedTab == 0 ? 1 : 0)
 
                     MonitorScreen()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .opacity(selectedTab == 1 ? 1 : 0)
                         .allowsHitTesting(selectedTab == 1)
                         .zIndex(selectedTab == 1 ? 1 : 0)
