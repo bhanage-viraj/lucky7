@@ -70,6 +70,7 @@ final class TimelapseManager: NSObject {
     private var loggedMissingWriterDrop = false
     private var pendingStartCompletion: ((Bool) -> Void)?
     private var captureCommandGeneration = 0
+    private var activePowerProfile: RecordingPowerProfile?
     /// Keeps the app alive long enough to flush finishWriting when we background mid-recording.
     /// Touched only on the main thread.
     private var backgroundTaskId: UIBackgroundTaskIdentifier = .invalid
@@ -146,6 +147,7 @@ final class TimelapseManager: NSObject {
         sessionQueue.async {
             guard self.session.isRunning else { return }
             self.session.stopRunning()
+            self.log("camera stopRunning")
         }
     }
 
@@ -236,12 +238,15 @@ final class TimelapseManager: NSObject {
             self.resetWriterState()
             self.plannedSessionSeconds = max(plannedSessionSeconds, AppConstants.minimumPlannedSessionSeconds)
             self.captureIntervalSeconds = AppConstants.captureIntervalSeconds(plannedSessionSeconds: self.plannedSessionSeconds)
+            let powerProfile = RecordingPowerProfile.recording(plannedSessionSeconds: self.plannedSessionSeconds)
+            self.setPowerProfile(powerProfile, reason: "startRecording")
 
             print(
                 String(
-                    format: "TimelapseManager: planned %.0fs → capture every %.2fs (up to %d frames = %.0fs video)",
+                    format: "TimelapseManager: planned %.0fs → capture every %.2fs targetCameraFPS=%.0f (up to %d frames = %.0fs video)",
                     self.plannedSessionSeconds,
                     self.captureIntervalSeconds,
+                    powerProfile.requestedFPS,
                     AppConstants.maxFramesForFullSession,
                     AppConstants.maxWrappedDurationSeconds
                 )
@@ -396,8 +401,13 @@ final class TimelapseManager: NSObject {
         self.log("stop stitching segments=\(segments.count) frames=\(captured)")
         self.beginBackgroundTaskIfNeeded()
         Task {
-            let stitched = await ExportEngine.shared.concatenateRawSegments(segments)
-            let fallback = stitched == nil ? await ExportEngine.shared.longestSegment(segments) : nil
+            var stitched: (url: URL, durationSeconds: Double)?
+            for attempt in 1...3 {
+                stitched = await ExportEngine.shared.concatenateRawSegments(segments)
+                if stitched != nil { break }
+                self.log("stitch retry attempt=\(attempt) segments=\(segments.count)")
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
             self.writerQueue.async {
                 self.endBackgroundTask()
                 if let stitched {
@@ -411,21 +421,8 @@ final class TimelapseManager: NSObject {
                     DispatchQueue.main.async {
                         completion(TimelapseStopResult(url: stitched.url, frameCount: count))
                     }
-                } else if let longest = fallback {
-                    // Stitch failed — ship the longest single segment so we never lose ALL footage.
-                    // Frame count comes from ITS duration, not the whole-session total, so the
-                    // downstream scaleTimeRange doesn't slow-mo stretch the shorter clip.
-                    let count = max(1, Int((longest.durationSeconds * AppConstants.wrappedOutputFPS).rounded()))
-                    for url in segments where url != longest.url { try? FileManager.default.removeItem(at: url) }
-                    self.lastCapturedFrameCount = count
-                    self.segmentURLs = []
-                    self.log("stitch FAILED; falling back to longest segment frames=\(count) url=\(longest.url.lastPathComponent)")
-                    self.resetWriterState()
-                    DispatchQueue.main.async {
-                        completion(TimelapseStopResult(url: longest.url, frameCount: count))
-                    }
                 } else {
-                    self.log("stitch FAILED and no usable segment found")
+                    self.log("stitch FAILED; no fallback raw source will be used")
                     self.resetWriterState()
                     DispatchQueue.main.async {
                         completion(TimelapseStopResult(url: nil, frameCount: 0))
@@ -492,7 +489,52 @@ final class TimelapseManager: NSObject {
             }
 
             self.log("configure success position=\(position.rawValue) inputs=\(self.session.inputs.count) outputs=\(self.session.outputs.count) running=\(self.session.isRunning)")
+            self.applyActivePowerProfile(reason: "configureSession")
             DispatchQueue.main.async { completion?(true) }
+        }
+    }
+
+    private func setPowerProfile(_ profile: RecordingPowerProfile, reason: String) {
+        sessionQueue.async {
+            self.activePowerProfile = profile
+            self.applyActivePowerProfile(reason: reason)
+        }
+    }
+
+    private func restorePreviewPowerProfile(reason: String) {
+        sessionQueue.async {
+            self.activePowerProfile = nil
+            self.applyPowerProfile(.preview, reason: reason)
+        }
+    }
+
+    private func applyActivePowerProfile(reason: String) {
+        guard let activePowerProfile else { return }
+        applyPowerProfile(activePowerProfile, reason: reason)
+    }
+
+    private func applyPowerProfile(_ profile: RecordingPowerProfile, reason: String) {
+        guard let input = session.inputs.first as? AVCaptureDeviceInput else {
+            log("powerProfile skipped reason=\(reason) noInput")
+            return
+        }
+
+        do {
+            let applied = try profile.apply(to: input.device)
+            log(
+                String(
+                    format: "powerProfile reason=%@ planned=%.0fs interval=%.2fs requestedFPS=%.0f appliedFPS=%.2f supported=%.2f...%.2f",
+                    reason,
+                    profile.plannedSessionSeconds,
+                    profile.captureIntervalSeconds,
+                    applied.requestedFPS,
+                    applied.appliedFPS,
+                    applied.minSupportedFPS,
+                    applied.maxSupportedFPS
+                )
+            )
+        } catch {
+            log("powerProfile failed reason=\(reason) error=\(error.localizedDescription)")
         }
     }
 
@@ -527,6 +569,7 @@ final class TimelapseManager: NSObject {
         pauseBeganWallSeconds = nil
         pendingStartCompletion = nil
         captureCommandGeneration = 0
+        restorePreviewPowerProfile(reason: "resetWriterState")
     }
 
     private static func makeOutputURL(suffix: String) -> URL? {
@@ -682,11 +725,13 @@ final class TimelapseManager: NSObject {
 
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
         input.expectsMediaDataInRealTime = true
+        let rawOrientation = VideoOrientationHelper.currentInterfaceOrientationSync()
+        let recordingOrientation = VideoOrientationHelper.recordingOrientation(from: rawOrientation)
         input.transform = VideoOrientationHelper.writerTransform(
             bufferWidth: width,
             bufferHeight: height,
             cameraPosition: configuredPosition,
-            orientation: VideoOrientationHelper.currentInterfaceOrientationSync()
+            orientation: recordingOrientation
         )
 
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
@@ -715,7 +760,7 @@ final class TimelapseManager: NSObject {
         if recordingStartWallSeconds == nil {
             recordingStartWallSeconds = ProcessInfo.processInfo.systemUptime
         }
-        log("setupWriter ok dimensions=\(width)x\(height) camera=\(configuredPosition.rawValue)")
+        log("setupWriter ok dimensions=\(width)x\(height) camera=\(configuredPosition.rawValue) orientationRaw=\(VideoOrientationHelper.orientationName(rawOrientation)) orientationApplied=\(VideoOrientationHelper.orientationName(recordingOrientation))")
         return true
     }
 

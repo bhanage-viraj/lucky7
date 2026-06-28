@@ -199,6 +199,8 @@ struct WeeklyAnalyticScreen: View {
         let top = step * 4
         config.maxValue = Double(top)
         config.gridLines = [top, top - step, top - 2 * step, top - 3 * step, 0]
+        config.labelColor = Color.black.opacity(0.55)
+        config.gridColor = Color.black.opacity(0.14)
         return config
     }
 
@@ -360,22 +362,19 @@ struct WeeklyAnalyticScreen: View {
     }
 
     var body: some View {
-            ZStack{
-                Color("CanvasBlue")
-                    .ignoresSafeArea()
-                
-                Image("PatternBackground")
-                    .ignoresSafeArea()
-                    .offset(y: 5)
-                
+        ResponsiveReader { metrics in
+            ZStack {
+                AdaptivePatternBackground(yOffset: 5)
+
                 VStack(spacing: 0) {
                     weekPickerBar
-                        .padding(.horizontal, 24)
-                        .padding(.top, 8)
+                        .adaptiveReadableFrame(metrics, maxWidth: metrics.isPad ? 720 : nil)
+                        .padding(.horizontal, metrics.horizontalPadding)
+                        .padding(.top, max(8, metrics.safeArea.top + 2))
                         .padding(.bottom, 6)
 
                     ScrollView(showsIndicators: false) {
-                        VStack{
+                        VStack {
                         Color.clear
                             .frame(height: 24)
                         
@@ -426,6 +425,7 @@ struct WeeklyAnalyticScreen: View {
                                             .frame(width: 156)
                                         }
                                         .padding(.bottom, 12)
+                                        .foregroundColor(.black)
                                     }
                                 }
                             }
@@ -491,6 +491,7 @@ struct WeeklyAnalyticScreen: View {
                                         .padding(.top, 1)
                                 }
                                 .offset(y: 8)
+                                .foregroundColor(.black)
                             }
                             
                             ZStack{
@@ -510,6 +511,7 @@ struct WeeklyAnalyticScreen: View {
                                         .padding(.top, 1)
                                 }
                                 .offset(y: 8)
+                                .foregroundColor(.black)
                             }
                         }
                         
@@ -533,6 +535,7 @@ struct WeeklyAnalyticScreen: View {
                                                 HStack(spacing: 16) {
                                                     Text("\(index + 1)")
                                                         .font(.custom("Special Gothic Expanded One", size: 15))
+                                                        .foregroundColor(.black)
 
                                                     appIcon(for: app)
 
@@ -543,6 +546,7 @@ struct WeeklyAnalyticScreen: View {
                                                 }
                                                 Spacer()
                                                 Text(TimeFormatter.shortDuration(app.duration))
+                                                    .foregroundColor(.black)
                                             }
                                             .padding()
 
@@ -557,15 +561,18 @@ struct WeeklyAnalyticScreen: View {
                             }
                         }
                         .padding(.top, 12)
+                        }
+                        .adaptiveReadableFrame(metrics, maxWidth: metrics.prefersTwoColumns ? 980 : (metrics.isPad ? 720 : nil))
+                        .padding(.horizontal, metrics.horizontalPadding)
+                        .padding(.bottom, metrics.safeArea.bottom + 40)
                     }
-                }
-                .padding(.horizontal, 24)
-                .simultaneousGesture(weekSwipeGesture)
+                    .simultaneousGesture(weekSwipeGesture)
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
             .navigationBarBackButtonHidden(true)
             .hidesFloatingTabBar()
+        }
     }
 }
 

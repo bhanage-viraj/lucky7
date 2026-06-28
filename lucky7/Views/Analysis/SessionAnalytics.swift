@@ -104,7 +104,6 @@ struct SessionAnalytics: View {
 
     private var playableVideoURL: URL? {
         WrapStorage.resolveVideoURL(session?.wrappedVideoPath)
-            ?? WrapStorage.resolveVideoURL(session?.rawClipPath)
     }
 
     private func logVideoResolution() {
@@ -120,57 +119,45 @@ struct SessionAnalytics: View {
     // MARK: - Body
 
     var body: some View {
-        ZStack {
-            Color("CanvasBlue")
-                .ignoresSafeArea()
+        ResponsiveReader { metrics in
+            ZStack(alignment: .top) {
+                AdaptivePatternBackground()
 
-            Image("PatternBackground")
-                .resizable()
-                .scaledToFill()
-                .ignoresSafeArea()
-                .offset(y: -30)
-
-            VStack {
-                HStack {
-                    Button(action: close) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
+                AdaptiveScrollContent(
+                    metrics: metrics,
+                    topPadding: analyticsContentTopPadding(metrics),
+                    bottomPadding: 110
+                ) {
+                    if metrics.prefersTwoColumns {
+                        HStack(alignment: .top, spacing: 24) {
+                            statsCard
+                                .frame(maxWidth: metrics.cardMaxWidth)
+                            detailCard
+                                .frame(maxWidth: metrics.cardMaxWidth)
+                        }
+                    } else {
+                        VStack(spacing: metrics.isPad ? 28 : 24) {
+                            statsCard
+                            detailCard
+                        }
                     }
-                    .accessibilityLabel("Close")
-                    .accessibilityHint("Closes session analytics")
-                    .accessibilityInputLabels(["close", "done", "exit"])
+                }
 
+                VStack {
                     Spacer()
-
-                    shareButton
+                    deleteButton
+                        .frame(maxWidth: metrics.isPad ? 420 : .infinity)
+                        .padding(.horizontal, metrics.horizontalPadding)
+                        .padding(.bottom, max(20, metrics.safeArea.bottom + 12))
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
 
-                Spacer()
-            }
-            .zIndex(1) // keep the top bar tappable above the ScrollView
-
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 24) {
-                    statsCard
-                    detailCard
+                if showDeleteConfirm {
+                    deleteConfirmation
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 110)
-                .padding(.top, 24)
             }
-
-            VStack {
-                Spacer()
-                deleteButton
-            }
-
-            if showDeleteConfirm {
-                deleteConfirmation
+            .frame(width: metrics.width, height: metrics.height, alignment: .top)
+            .overlay(alignment: .top) {
+                topControls(metrics: metrics)
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -199,6 +186,29 @@ struct SessionAnalytics: View {
     }
 
     // MARK: - Subviews
+    private func analyticsContentTopPadding(_ metrics: ResponsiveMetrics) -> CGFloat {
+        if metrics.prefersTwoColumns { return metrics.safeArea.top + 36 }
+        if metrics.isLandscape { return metrics.safeArea.top + 24 }
+        return metrics.safeArea.top + 96
+    }
+
+    private func topControls(metrics: ResponsiveMetrics) -> some View {
+        HStack {
+            AdaptiveIconButton(systemName: "xmark", action: close)
+                .accessibilityLabel("Close")
+                .accessibilityHint("Closes session analytics")
+                .accessibilityInputLabels(["close", "done", "exit"])
+
+            Spacer()
+
+            shareButton
+        }
+        .adaptiveReadableFrame(metrics)
+        .padding(.horizontal, metrics.horizontalPadding)
+        .padding(.top, max(6, metrics.safeArea.top - 6))
+        .zIndex(3)
+    }
+
     private var shareButton: some View {
         Button {
             shareAnalyticsStory()
@@ -393,8 +403,6 @@ struct SessionAnalytics: View {
                     .stroke(Color("ButtonRed"), lineWidth: 2)
             )
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 30)
         .accessibilityLabel("Delete session")
         .accessibilityHint("Permanently deletes this session and its video")
         .accessibilityInputLabels(["delete", "remove session"])

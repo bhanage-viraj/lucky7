@@ -38,6 +38,7 @@ struct SessionDetails: View {
 
     private let maxSnapshots = 6
     private let maxTitleLength = 30
+    private let staleRollupSliceMaxSeconds: TimeInterval = 5
 
     /// Dark navy fill for the SAVE button (matches the design mock-up).
     private let saveButtonColor = Color(red: 30 / 255, green: 58 / 255, blue: 95 / 255)
@@ -86,29 +87,21 @@ struct SessionDetails: View {
     }
 
     var body: some View {
-        ZStack {
-            Color("CanvasBlue")
-                .ignoresSafeArea()
+        ResponsiveReader { metrics in
+            ZStack {
+                AdaptivePatternBackground()
 
-            Image("PatternBackground")
-                .resizable()
-                .scaledToFill()
-                .ignoresSafeArea()
-                .offset(y: -30)
-                .accessibilityDecorative()
-
-            ScrollView {
-                VStack(spacing: 24) {
-                    sessionCard
-                        .disabled(isSaving)
-                    saveButton
+                AdaptiveScrollContent(metrics: metrics, bottomPadding: 40, maxWidth: metrics.isPad ? 680 : nil) {
+                    VStack(spacing: metrics.isPad ? 28 : 24) {
+                        sessionCard
+                            .disabled(isSaving)
+                        saveButton
+                    }
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 24)
-                .padding(.bottom, 40)
             }
         }
         .onAppear {
+            loadSessionDraft()
             restoreRecoverableVideoState()
             scheduleBackgroundWrapExport()
         }
@@ -350,7 +343,10 @@ struct SessionDetails: View {
         backgroundWrapTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 800_000_000)
             guard !Task.isCancelled else { return }
-            sessionRecording.prepareTitledExport(title, durationSeconds: duration)
+            sessionRecording.reexportWithTitle(title, durationSeconds: duration, saveToPhotos: false) { finalURL in
+                guard let finalURL, FileManager.default.fileExists(atPath: finalURL.path) else { return }
+                persistFinalWrap(finalURL, reason: "background export")
+            }
         }
     }
 
@@ -360,12 +356,10 @@ struct SessionDetails: View {
         backgroundWrapTask?.cancel()
         isSaving = true
         var sessionDuration: TimeInterval = 0
+        let snapshotsToExport = uploadedSnapshots
         if let session = sessions.first(where: { $0.id == sessionId }) {
             session.title = sessionTitle
             session.summary = sessionDescription
-            session.snapshotImages = uploadedSnapshots.compactMap {
-                $0.jpegData(compressionQuality: 0.8)
-            }
             if let rawName = sessionRecording.rawClipURL?.lastPathComponent {
                 session.rawClipPath = rawName
             }
@@ -375,29 +369,18 @@ struct SessionDetails: View {
         }
 
         // Burn in the user's title and the session's actual focus duration as the hero number.
-        let snapshotsToExport = uploadedSnapshots
         sessionRecording.reexportWithTitle(
             exportTitle,
             durationSeconds: sessionDuration
         ) { finalURL in
-            if let session = sessions.first(where: { $0.id == sessionId }) {
-                if let finalURL {
-                    session.wrappedVideoPath = finalURL.lastPathComponent
-                }
-                if let rawName = sessionRecording.rawClipURL?.lastPathComponent {
-                    session.rawClipPath = rawName
-                }
-                try? context.save()
-                RecordingDiagnostics.log("SessionDetails final callback session=\(sessionId) final=\(finalURL?.lastPathComponent ?? "nil") raw=\(session.rawClipPath ?? "nil") wrapped=\(session.wrappedVideoPath ?? "nil")")
-            }
-
-            guard hasRecoverableVideo(finalURL: finalURL) else {
+            guard let finalURL, FileManager.default.fileExists(atPath: finalURL.path) else {
                 isSaving = false
                 saveErrorMessage = sessionRecording.lastError
-                    ?? "No video was captured for this session. Please try recording again and keep Rush Hour open until the camera preview is running."
+                    ?? "Rush Hour is still generating your wrap. Keep the app open while it retries."
                 showSaveError = true
                 return
             }
+            persistFinalWrap(finalURL, reason: "save final callback", snapshots: snapshotsToExport)
 
             Task {
                 for image in snapshotsToExport {
@@ -422,27 +405,54 @@ struct SessionDetails: View {
         let wrapped = WrapStorage.resolveVideoURL(session.wrappedVideoPath)
         let raw = WrapStorage.resolveVideoURL(session.rawClipPath)
         RecordingDiagnostics.log("SessionDetails restore session=\(sessionId) storedWrapped=\(session.wrappedVideoPath ?? "nil") resolvedWrapped=\(wrapped?.lastPathComponent ?? "nil") storedRaw=\(session.rawClipPath ?? "nil") resolvedRaw=\(raw?.lastPathComponent ?? "nil")")
-        sessionRecording.restoreExportContext(rawURL: raw, finalURL: wrapped)
+        sessionRecording.restoreExportContext(
+            rawURL: exportableRawSource(for: session, rawURL: raw, wrappedURL: wrapped),
+            finalURL: wrapped
+        )
     }
 
-    private func hasRecoverableVideo(finalURL: URL?) -> Bool {
-        if let finalURL, FileManager.default.fileExists(atPath: finalURL.path) {
-            RecordingDiagnostics.log("SessionDetails recoverable via final=\(finalURL.lastPathComponent)")
-            return true
+    private func loadSessionDraft() {
+        guard let session = sessions.first(where: { $0.id == sessionId }) else { return }
+        if sessionTitle.isEmpty {
+            sessionTitle = session.title
         }
-        if let rawURL = sessionRecording.rawClipURL,
-           FileManager.default.fileExists(atPath: rawURL.path) {
-            RecordingDiagnostics.log("SessionDetails recoverable via live raw=\(rawURL.lastPathComponent)")
-            return true
+        if sessionDescription.isEmpty {
+            sessionDescription = session.summary
         }
-        guard let session = sessions.first(where: { $0.id == sessionId }) else {
-            RecordingDiagnostics.log("SessionDetails not recoverable: session missing")
-            return false
+        if uploadedSnapshots.isEmpty {
+            uploadedSnapshots = session.snapshotImages.compactMap { UIImage(data: $0) }
         }
-        let wrapped = WrapStorage.resolveVideoURL(session.wrappedVideoPath)
-        let raw = WrapStorage.resolveVideoURL(session.rawClipPath)
-        RecordingDiagnostics.log("SessionDetails recover check storedWrapped=\(session.wrappedVideoPath ?? "nil") resolvedWrapped=\(wrapped?.lastPathComponent ?? "nil") storedRaw=\(session.rawClipPath ?? "nil") resolvedRaw=\(raw?.lastPathComponent ?? "nil")")
-        return wrapped != nil || raw != nil
+    }
+
+    private func persistFinalWrap(_ finalURL: URL, reason: String) {
+        persistFinalWrap(finalURL, reason: reason, snapshots: nil)
+    }
+
+    private func persistFinalWrap(_ finalURL: URL, reason: String, snapshots: [UIImage]?) {
+        guard let session = sessions.first(where: { $0.id == sessionId }) else { return }
+        session.wrappedVideoPath = finalURL.lastPathComponent
+        if let rawName = sessionRecording.rawClipURL?.lastPathComponent {
+            session.rawClipPath = rawName
+        }
+        if let snapshots {
+            session.snapshotImages = snapshots.compactMap {
+                $0.jpegData(compressionQuality: 0.8)
+            }
+        }
+        try? context.save()
+        RecordingDiagnostics.log("SessionDetails persist final reason=\(reason) session=\(sessionId) final=\(finalURL.lastPathComponent) raw=\(session.rawClipPath ?? "nil")")
+    }
+
+    private func exportableRawSource(for session: Session, rawURL: URL?, wrappedURL: URL?) -> URL? {
+        guard let rawURL else { return nil }
+        guard wrappedURL == nil else { return rawURL }
+
+        let rawSeconds = Double(SessionRecordingViewModel.estimatedFrameCount(from: rawURL)) / AppConstants.wrappedOutputFPS
+        if session.actualDuration >= 15 * 60, rawSeconds <= staleRollupSliceMaxSeconds {
+            RecordingDiagnostics.log("SessionDetails restore skipped short raw source session=\(sessionId) raw=\(rawURL.lastPathComponent) seconds=\(String(format: "%.2f", rawSeconds))")
+            return nil
+        }
+        return rawURL
     }
 }
 

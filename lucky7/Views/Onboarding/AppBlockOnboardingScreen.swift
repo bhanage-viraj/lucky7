@@ -22,39 +22,47 @@ struct AppBlockOnboardingScreen: View {
     let onDone: () -> Void
 
     var body: some View {
-        ZStack {
-            Color("CanvasBlue").ignoresSafeArea()
+        ResponsiveReader { metrics in
+            ZStack {
+                Color("CanvasBlue").ignoresSafeArea()
 
-            VStack(spacing: 24) {
-                Spacer()
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: metrics.isShort ? 18 : 24) {
+                        Spacer(minLength: metrics.isShort ? 12 : 44)
 
-                Image("TicketStopSign")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxHeight: 180)
+                        Image("TicketStopSign")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxHeight: metrics.isShort ? 128 : 180)
+                            .accessibilityDecorative()
 
-                VStack(spacing: 12) {
-                    Text("Block your distractions")
-                        .font(.custom("SpecialGothicExpandedOne-Regular", size: 28))
-                        .foregroundStyle(.white)
-                        .multilineTextAlignment(.center)
+                        VStack(spacing: 12) {
+                            Text("Block your distractions")
+                                .font(.custom("SpecialGothicExpandedOne-Regular", size: metrics.isNarrow ? 24 : 28))
+                                .foregroundStyle(.white)
+                                .multilineTextAlignment(.center)
+                                .minimumScaleFactor(0.82)
 
-                    Text("Pick the apps that pull you away from focus.\nWe'll block them while Rush Hour is running.")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(1.5)
+                            Text("Pick the apps that pull you away from focus.\nWe'll block them while Rush Hour is running.")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .multilineTextAlignment(.center)
+                                .lineSpacing(1.5)
+                        }
+
+                        Spacer(minLength: metrics.isShort ? 12 : 44)
+
+                        pickerCard
+
+                        continueButton
+                    }
+                    .adaptiveReadableFrame(metrics, maxWidth: metrics.isPad ? 520 : nil)
+                    .frame(minHeight: metrics.height - metrics.safeArea.top - metrics.safeArea.bottom)
+                    .padding(.horizontal, metrics.horizontalPadding)
+                    .padding(.top, metrics.safeArea.top)
+                    .padding(.bottom, max(24, metrics.safeArea.bottom + 16))
                 }
-                .padding(.horizontal, 20)
-
-                Spacer()
-
-                pickerCard
-
-                continueButton
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 24)
         }
         #if os(iOS)
         .familyActivityPicker(isPresented: $showPicker, selection: focusController.selectionBinding)
@@ -117,6 +125,7 @@ struct AppBlockOnboardingScreen: View {
                 .tracking(1.2)
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
+                .frame(minHeight: 56)
                 .padding(.vertical, 18)
                 .background(.black, in: Capsule())
         }

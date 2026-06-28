@@ -23,9 +23,11 @@ struct FocusAlertCard: View {
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
 
-            card
+            ResponsiveReader { metrics in
+                card(maxWidth: min(metrics.width - metrics.horizontalPadding * 2, metrics.isPad ? 420 : 354))
                 .scaleEffect(appeared ? 1 : 0.9, anchor: .center)
                 .opacity(appeared && !leaving ? 1 : 0)
+            }
         }
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: appeared)
         .onAppear {
@@ -42,7 +44,7 @@ struct FocusAlertCard: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onDismiss() }
     }
 
-    private var card: some View {
+    private func card(maxWidth: CGFloat) -> some View {
         VStack(spacing: 24) {
             VStack(spacing: 8) {
                 Text(title)
@@ -71,7 +73,7 @@ struct FocusAlertCard: View {
         }
         .padding(.vertical, 20)
         .padding(.horizontal, 24)
-        .frame(width: 354)
+        .frame(maxWidth: maxWidth)
         .background(RoundedRectangle(cornerRadius: 24).fill(.white))
         .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(.black, lineWidth: 2))
         .accessibilityElement(children: .contain)

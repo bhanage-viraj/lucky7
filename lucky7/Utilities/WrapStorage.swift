@@ -2,7 +2,8 @@
 // Persistent on-disk locations + period-key/label helpers for the recap system.
 //
 // Layout (Application Support, excluded from iCloud backup):
-//   Wraps/sessions/<uuid>.mp4   — text-free per-session slices (the rollup source)
+//   Wraps/sessions/<uuid>.mp4     — full per-session source clips for final exports + rollups
+//   Wraps/finals/wrapped_<uuid>.mp4 — titled session wraps, the only session playback source
 //   Wraps/periods/<kind>_<key>.mp4 — stitched weekly/monthly recaps
 
 import Foundation
@@ -35,9 +36,15 @@ enum WrapStorage {
 
     // MARK: - File URLs
 
-    /// A fresh, uniquely-named destination for a per-session slice.
-    static func newSessionSliceURL() -> URL {
+    /// A fresh, uniquely-named destination for a durable full session source.
+    static func newSessionSourceURL() -> URL {
         sessionsDir.appendingPathComponent("\(UUID().uuidString).mp4")
+    }
+
+    /// A temporary, recap-only clean slice. Never store this on a Session.
+    static func temporaryRollupSliceURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("wrap_rollup_slice_\(UUID().uuidString).mp4")
     }
 
     /// A fresh destination for a titled session wrap. Lives in Application Support, not

@@ -13,8 +13,8 @@ final class SessionRecordingViewModel: ObservableObject {
     @Published var isRecording = false
     @Published var isExporting = false
     @Published var finalVideoURL: URL?
-    /// Persistent fallback video for this session. Initially a durable copy of the raw
-    /// clip, then replaced by the text-free clean slice if that export succeeds.
+    /// Durable full source clip for final wrap generation and retry. This is not a
+    /// playable fallback; session playback must use `finalVideoURL`.
     @Published var rawClipURL: URL?
     @Published var previewFrames: [UIImage] = []
     @Published var cameraReady = false
@@ -34,19 +34,18 @@ final class SessionRecordingViewModel: ObservableObject {
     private var didCaptureThisSession = false
     private var stopCompletions: [() -> Void] = []
     private var isStoppingRecording = false
-    private var isCleanSliceExporting = false
-    private var cleanSliceToken = UUID()
-    private var cleanSliceRawURL: URL?
-    private var rawURLsPendingDeletion: Set<URL> = []
     private var pendingTitleExport: PendingTitleExport?
     private var activeTitleExportTitle: String?
     private var activeTitleExportCompletions: [(URL?) -> Void] = []
     private var activeTitleExportShouldSaveToPhotos = false
     private var completedTitleExportTitle: String?
     private var completedTitleExportSavedToPhotos = false
+    private var titleExportRetryTask: Task<Void, Never>?
     // Kept until the user titles the session, so the wrap can be re-rendered with the title.
     private var retainedRawURL: URL?
     private var lastExportFrameCount: Int = 0
+    private static let homePreviewIdleNanoseconds: UInt64 = 45 * 1_000_000_000
+    private var homePreviewIdleTask: Task<Void, Never>?
 
     private struct PendingTitleExport {
         let title: String
@@ -93,6 +92,44 @@ final class SessionRecordingViewModel: ObservableObject {
         timelapseManager.startRunning()
     }
 
+    func noteHomePreviewInteraction() {
+        guard !isRecording, !isExporting else { return }
+        log("homePreview interaction cameraReady=\(cameraReady)")
+        if cameraReady {
+            timelapseManager.startRunning()
+        } else {
+            prepareCamera()
+        }
+        scheduleHomePreviewIdleStop()
+    }
+
+    func stopHomePreview() {
+        cancelHomePreviewIdleStop()
+        guard !isRecording, !isExporting else { return }
+        log("homePreview stop")
+        timelapseManager.stopRunning()
+    }
+
+    private func scheduleHomePreviewIdleStop() {
+        homePreviewIdleTask?.cancel()
+        homePreviewIdleTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.homePreviewIdleNanoseconds)
+            guard !Task.isCancelled else { return }
+            self?.stopHomePreviewAfterIdle()
+        }
+    }
+
+    private func cancelHomePreviewIdleStop() {
+        homePreviewIdleTask?.cancel()
+        homePreviewIdleTask = nil
+    }
+
+    private func stopHomePreviewAfterIdle() {
+        guard !isRecording, !isExporting else { return }
+        log("homePreview idle stop")
+        timelapseManager.stopRunning()
+    }
+
     func startRecording(plannedSessionSeconds: TimeInterval, completion: ((Bool) -> Void)? = nil) {
         log("startRecording requested cameraReady=\(cameraReady) isRecording=\(isRecording) planned=\(plannedSessionSeconds)")
         guard cameraReady else {
@@ -116,6 +153,7 @@ final class SessionRecordingViewModel: ObservableObject {
         statusMessage = "Recording…"
         self.plannedSessionSeconds = max(plannedSessionSeconds, 60)
         recordedWallClockSeconds = 0
+        cancelHomePreviewIdleStop()
 
         timelapseManager.startRecording(plannedSessionSeconds: self.plannedSessionSeconds) { [weak self] started in
             Task { @MainActor in
@@ -144,6 +182,7 @@ final class SessionRecordingViewModel: ObservableObject {
         guard !isCapturePaused else { return }
         isCapturePaused = true
         timelapseManager.pauseCapture()
+        timelapseManager.stopRunning()
         statusMessage = "Recording paused"
         AccessibilitySupport.announce("Recording paused")
     }
@@ -229,12 +268,12 @@ final class SessionRecordingViewModel: ObservableObject {
                 self.lastExportFrameCount = result.frameCount
                 self.previewFrames = Self.extractPreviewFrames(from: rawURL, count: 3)
                 let durableRawURL = Self.copyRawClipToDurableStorage(rawURL)
-                self.retainedRawURL = durableRawURL ?? rawURL
-                self.rawClipURL = durableRawURL
-                self.log("raw prepared previewFrames=\(self.previewFrames.count) fallback=\(self.rawClipURL?.lastPathComponent ?? "nil")")
+                let sourceURL = durableRawURL ?? rawURL
+                self.retainedRawURL = sourceURL
+                self.rawClipURL = sourceURL
+                self.log("raw source prepared previewFrames=\(self.previewFrames.count) source=\(self.rawClipURL?.lastPathComponent ?? "nil")")
                 self.didCaptureThisSession = false
                 self.statusMessage = "Ready to save"
-                self.startCleanSliceExport(from: rawURL)
                 let pending = self.pendingTitleExport
                 self.pendingTitleExport = nil
                 self.finishStopCompletions()
@@ -259,56 +298,17 @@ final class SessionRecordingViewModel: ObservableObject {
         completions.forEach { $0() }
     }
 
-    private func startCleanSliceExport(from rawURL: URL) {
-        isCleanSliceExporting = true
-        cleanSliceToken = UUID()
-        let token = cleanSliceToken
-        cleanSliceRawURL = rawURL
-        let sliceURL = WrapStorage.newSessionSliceURL()
-        log("cleanSlice start raw=\(rawURL.lastPathComponent) slice=\(sliceURL.lastPathComponent)")
-        Task { [weak self] in
-            let ok = await ExportEngine.shared.generateCleanSlice(
-                rawVideoURL: rawURL,
-                sliceSeconds: WrapRollupService.sliceSeconds,
-                outputURL: sliceURL
-            )
-            await MainActor.run {
-                guard let self else { return }
-                let isCurrentSlice = self.cleanSliceToken == token
-                if ok, isCurrentSlice {
-                    if let previous = self.rawClipURL,
-                       previous != sliceURL,
-                       previous != self.retainedRawURL {
-                        try? FileManager.default.removeItem(at: previous)
-                    }
-                    self.rawClipURL = sliceURL
-                    self.log("cleanSlice success slice=\(sliceURL.lastPathComponent)")
-                } else {
-                    try? FileManager.default.removeItem(at: sliceURL)
-                    self.log("cleanSlice failed ok=\(ok) isCurrent=\(isCurrentSlice)")
-                }
-                if self.rawURLsPendingDeletion.remove(rawURL) != nil {
-                    try? FileManager.default.removeItem(at: rawURL)
-                }
-                guard isCurrentSlice, self.cleanSliceRawURL == rawURL else { return }
-
-                self.isCleanSliceExporting = false
-                self.cleanSliceRawURL = nil
-            }
-        }
-    }
-
     private static func copyRawClipToDurableStorage(_ rawURL: URL) -> URL? {
-        let fallbackURL = WrapStorage.newSessionSliceURL()
+        let sourceURL = WrapStorage.newSessionSourceURL()
         do {
-            if FileManager.default.fileExists(atPath: fallbackURL.path) {
-                try FileManager.default.removeItem(at: fallbackURL)
+            if FileManager.default.fileExists(atPath: sourceURL.path) {
+                try FileManager.default.removeItem(at: sourceURL)
             }
-            try FileManager.default.copyItem(at: rawURL, to: fallbackURL)
-            RecordingDiagnostics.log("SessionRecording raw fallback copied from=\(rawURL.lastPathComponent) to=\(fallbackURL.lastPathComponent)")
-            return fallbackURL
+            try FileManager.default.copyItem(at: rawURL, to: sourceURL)
+            RecordingDiagnostics.log("SessionRecording raw source copied from=\(rawURL.lastPathComponent) to=\(sourceURL.lastPathComponent)")
+            return sourceURL
         } catch {
-            RecordingDiagnostics.log("SessionRecording raw fallback copy failed error=\(error.localizedDescription)")
+            RecordingDiagnostics.log("SessionRecording raw source copy failed error=\(error.localizedDescription)")
             return nil
         }
     }
@@ -319,18 +319,15 @@ final class SessionRecordingViewModel: ObservableObject {
         isRecording = false
         isCapturePaused = false
         isExporting = false
+        titleExportRetryTask?.cancel()
+        titleExportRetryTask = nil
+        cancelHomePreviewIdleStop()
         let persistedRawURL = rawClipURL
         finalVideoURL = nil
         rawClipURL = nil
-        let activeCleanSliceRawURL = cleanSliceRawURL
-        cleanSliceToken = UUID()
-        isCleanSliceExporting = false
-        cleanSliceRawURL = nil
         if let raw = retainedRawURL {
             if persistedRawURL == raw {
                 log("resetForNewSession kept persisted raw=\(raw.lastPathComponent)")
-            } else if activeCleanSliceRawURL == raw {
-                rawURLsPendingDeletion.insert(raw)
             } else {
                 try? FileManager.default.removeItem(at: raw)
             }
@@ -505,7 +502,9 @@ final class SessionRecordingViewModel: ObservableObject {
         let exportTitle = normalizedTitle(title)
         log("reexportWithTitle title=\(exportTitle) duration=\(durationSeconds) saveToPhotos=\(saveToPhotos) isExporting=\(isExporting) retainedRaw=\(retainedRawURL?.lastPathComponent ?? "nil") frameCount=\(lastExportFrameCount)")
 
-        if let finalVideoURL, completedTitleExportTitle == exportTitle {
+        if let finalVideoURL,
+           completedTitleExportTitle == exportTitle,
+           FileManager.default.fileExists(atPath: finalVideoURL.path) {
             finishCachedTitleExport(
                 finalVideoURL,
                 saveToPhotos: saveToPhotos,
@@ -622,6 +621,13 @@ final class SessionRecordingViewModel: ObservableObject {
     ) {
         guard let raw = exportSourceURL(), lastExportFrameCount > 0 else {
             log("startTitleExport missing raw/frameCount final=\(finalVideoURL?.lastPathComponent ?? "nil") raw=\(rawClipURL?.lastPathComponent ?? "nil") retained=\(retainedRawURL?.lastPathComponent ?? "nil")")
+            lastError = finalVideoURL == nil ? "Could not generate wrap because the source video is missing." : lastError
+            activeTitleExportTitle = nil
+            activeTitleExportCompletions.removeAll()
+            activeTitleExportShouldSaveToPhotos = false
+            isExporting = false
+            statusMessage = nil
+            ScreenWakeLock.release()
             completions.forEach { $0(finalVideoURL) }
             return
         }
@@ -630,6 +636,7 @@ final class SessionRecordingViewModel: ObservableObject {
         activeTitleExportTitle = title
         activeTitleExportCompletions = completions
         activeTitleExportShouldSaveToPhotos = saveToPhotos
+        lastError = nil
         statusMessage = "Generating your Wrap…"
         ScreenWakeLock.setActive(true)
         // Prefer the session's actual duration; fall back to the recorded wall-clock.
@@ -642,15 +649,18 @@ final class SessionRecordingViewModel: ObservableObject {
         ) { [weak self] finalURL in
             Task { @MainActor in
                 guard let self else { return }
-                let finishedTitle = self.activeTitleExportTitle
+                let finishedTitle = self.activeTitleExportTitle ?? title
                 let callbacks = self.activeTitleExportCompletions
                 let shouldSaveToPhotos = self.activeTitleExportShouldSaveToPhotos
-                self.activeTitleExportTitle = nil
-                self.activeTitleExportCompletions.removeAll()
-                self.activeTitleExportShouldSaveToPhotos = false
-                self.isExporting = false
-                self.statusMessage = nil
                 if let finalURL {
+                    self.titleExportRetryTask?.cancel()
+                    self.titleExportRetryTask = nil
+                    self.activeTitleExportTitle = nil
+                    self.activeTitleExportCompletions.removeAll()
+                    self.activeTitleExportShouldSaveToPhotos = false
+                    self.isExporting = false
+                    self.statusMessage = nil
+                    self.lastError = nil
                     let exists = FileManager.default.fileExists(atPath: finalURL.path)
                     self.log("titleExport success final=\(finalURL.lastPathComponent) exists=\(exists)")
                     // Every re-title renders a fresh file in the finals dir — drop the
@@ -668,12 +678,20 @@ final class SessionRecordingViewModel: ObservableObject {
                         await self.saveToPhotosIfPossible(videoURL: finalURL)
                         self.completedTitleExportSavedToPhotos = self.savedToPhotos
                     }
+                    ScreenWakeLock.release()
+                    callbacks.forEach { $0(finalURL) }
                 } else {
                     self.lastError = "Could not stitch session video."
-                    self.log("titleExport failed final=nil")
+                    self.statusMessage = "Generating your Wrap…"
+                    self.isExporting = true
+                    self.log("titleExport failed final=nil; retrying title=\(finishedTitle)")
+                    self.scheduleTitleExportRetry(
+                        title: finishedTitle,
+                        durationSeconds: durationSeconds,
+                        saveToPhotos: shouldSaveToPhotos
+                    )
+                    return
                 }
-                ScreenWakeLock.release()
-                callbacks.forEach { $0(finalURL) }
 
                 let pending = self.pendingTitleExport
                 self.pendingTitleExport = nil
@@ -700,6 +718,40 @@ final class SessionRecordingViewModel: ObservableObject {
         }
     }
 
+    private func scheduleTitleExportRetry(
+        title: String,
+        durationSeconds: TimeInterval,
+        saveToPhotos: Bool
+    ) {
+        titleExportRetryTask?.cancel()
+        titleExportRetryTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self else { return }
+                self.titleExportRetryTask = nil
+                if let pending = self.pendingTitleExport {
+                    let activeCompletions = self.activeTitleExportCompletions
+                    let shouldSave = saveToPhotos || self.activeTitleExportShouldSaveToPhotos || pending.saveToPhotos
+                    self.pendingTitleExport = nil
+                    self.startTitleExport(
+                        pending.title,
+                        durationSeconds: pending.durationSeconds,
+                        saveToPhotos: shouldSave,
+                        completions: activeCompletions + pending.completions
+                    )
+                } else {
+                    self.startTitleExport(
+                        self.activeTitleExportTitle ?? title,
+                        durationSeconds: durationSeconds,
+                        saveToPhotos: saveToPhotos || self.activeTitleExportShouldSaveToPhotos,
+                        completions: self.activeTitleExportCompletions
+                    )
+                }
+            }
+        }
+    }
+
     private func exportSourceURL() -> URL? {
         if let retainedRawURL, FileManager.default.fileExists(atPath: retainedRawURL.path) {
             return retainedRawURL
@@ -709,7 +761,7 @@ final class SessionRecordingViewModel: ObservableObject {
             if lastExportFrameCount <= 0 {
                 lastExportFrameCount = Self.estimatedFrameCount(from: rawClipURL)
             }
-            log("exportSource fallback raw=\(rawClipURL.lastPathComponent) frames=\(lastExportFrameCount)")
+            log("exportSource raw=\(rawClipURL.lastPathComponent) frames=\(lastExportFrameCount)")
             return rawClipURL
         }
         if let retainedRawURL {

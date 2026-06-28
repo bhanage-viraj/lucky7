@@ -23,16 +23,58 @@ enum VideoOrientationHelper {
         }
     }
 
+    static func currentRecordingOrientationSync() -> UIInterfaceOrientation {
+        recordingOrientation(from: currentInterfaceOrientationSync())
+    }
+
     private static func interfaceOrientationFromApplication() -> UIInterfaceOrientation {
         let scenes = UIApplication.shared.connectedScenes
         let windowScenes = scenes.compactMap { $0 as? UIWindowScene }
         let active = windowScenes.first { $0.activationState == .foregroundActive }
-        return (active ?? windowScenes.first)?.interfaceOrientation ?? .portrait
+        guard let scene = active ?? windowScenes.first else { return .portrait }
+        if #available(iOS 26.0, *) {
+            return scene.effectiveGeometry.interfaceOrientation
+        }
+        return scene.interfaceOrientation
+    }
+
+    static func recordingOrientation(from orientation: UIInterfaceOrientation) -> UIInterfaceOrientation {
+        guard orientation != .unknown else { return .portrait }
+
+        // iPhone does not advertise portrait-upside-down in Info.plist. If UIKit briefly reports
+        // that stale orientation at the first camera frame, encoding it would make the raw clip
+        // and final wrap upside down on affected devices.
+        if isPhoneInterfaceIdiom(), orientation == .portraitUpsideDown {
+            return .portrait
+        }
+
+        return orientation
+    }
+
+    static func orientationName(_ orientation: UIInterfaceOrientation) -> String {
+        switch orientation {
+        case .portrait: return "portrait"
+        case .portraitUpsideDown: return "portraitUpsideDown"
+        case .landscapeLeft: return "landscapeLeft"
+        case .landscapeRight: return "landscapeRight"
+        case .unknown: return "unknown"
+        @unknown default: return "unknown(\(orientation.rawValue))"
+        }
+    }
+
+    private static func isPhoneInterfaceIdiom() -> Bool {
+        if Thread.isMainThread {
+            return UIDevice.current.userInterfaceIdiom == .phone
+        }
+        return DispatchQueue.main.sync {
+            UIDevice.current.userInterfaceIdiom == .phone
+        }
     }
 
     /// Matches preview + recorded frames to how the user holds the phone.
     static func applyToCaptureConnection(_ connection: AVCaptureConnection) async {
-        let orientation = await currentInterfaceOrientation()
+        let rawOrientation = await currentInterfaceOrientation()
+        let orientation = recordingOrientation(from: rawOrientation)
         // Use `videoOrientation` instead of rotation angles.
         // This avoids inverted mappings across iOS versions/devices.
         if connection.isVideoOrientationSupported {
@@ -68,7 +110,8 @@ enum VideoOrientationHelper {
         bufferHeight: Int,
         cameraPosition: AVCaptureDevice.Position
     ) async -> CGAffineTransform {
-        let orientation = await currentInterfaceOrientation()
+        let rawOrientation = await currentInterfaceOrientation()
+        let orientation = recordingOrientation(from: rawOrientation)
         return writerTransform(
             bufferWidth: bufferWidth,
             bufferHeight: bufferHeight,

@@ -98,11 +98,9 @@ struct WrappedVideoScreen: View {
     private var videoURL: URL? {
         switch kind {
         case .session:
-            // The saved session path is authoritative. Avoid falling back to the
-            // global live export URL here; from History that can point at a
-            // different, more recent session and share/play the wrong wrap.
+            // The final wrapped session path is the only playable/shareable source.
+            // rawClipPath is just an export source and must never be shown as a wrap.
             return WrapStorage.resolveVideoURL(session?.wrappedVideoPath)
-                ?? WrapStorage.resolveVideoURL(session?.rawClipPath)
         case .weekly, .monthly:
             return WrapStorage.resolveVideoURL(periodWrap?.videoPath)
         }
@@ -117,32 +115,30 @@ struct WrappedVideoScreen: View {
     // MARK: - Body
 
     var body: some View {
-        ZStack {
-            Color("CanvasBlue")
-                .ignoresSafeArea()
+        ResponsiveReader { metrics in
+            ZStack(alignment: .top) {
+                AdaptivePatternBackground()
 
-            Image("PatternBackground")
-                .resizable()
-                .scaledToFill()
-                .ignoresSafeArea()
-                .offset(y: -30)
+                VStack(spacing: 0) {
+                    Spacer(minLength: metrics.isLandscape ? 54 : metrics.safeArea.top + 44)
 
-            VStack(spacing: 0) {
+                    mediaCard(metrics: metrics)
+                        .padding(.horizontal, metrics.horizontalPadding)
+                        .layoutPriority(1)
+
+                    Spacer(minLength: metrics.isLandscape ? 8 : 12)
+
+                    playPauseButton
+                        .padding(.bottom, max(16, metrics.safeArea.bottom + 8))
+                }
+                .frame(width: metrics.width, height: metrics.height)
+
                 topBar
-                    .padding(.horizontal, 20)
-                    .padding(.top, 10)
-
-                Spacer(minLength: 16)
-
-                mediaCard
-                    .padding(.horizontal, 20)
-                    .layoutPriority(1)
-
-                Spacer(minLength: 16)
-
-                playPauseButton
-                    .padding(.bottom, 20)
+                    .padding(.horizontal, metrics.horizontalPadding)
+                    .padding(.top, max(6, metrics.safeArea.top - 6))
+                    .zIndex(2)
             }
+            .frame(width: metrics.width, height: metrics.height, alignment: .top)
         }
         .frame(maxWidth: .infinity)
         .navigationBarBackButtonHidden(true)
@@ -205,7 +201,6 @@ struct WrappedVideoScreen: View {
 
             shareButton
         }
-        .padding(.horizontal, 20)
     }
 
     private var shareButton: some View {
@@ -239,7 +234,7 @@ struct WrappedVideoScreen: View {
         sharePayload = VideoSharePayload(url: url, title: displayTitle)
     }
 
-    private var mediaCard: some View {
+    private func mediaCard(metrics: ResponsiveMetrics) -> some View {
         // 9:16 portrait — matches the iPhone camera capture so the wrap video
         // fills the frame without letterbox bars.
         Color.clear
@@ -315,7 +310,7 @@ struct WrappedVideoScreen: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 32))
             )
-            .frame(maxWidth: 340)
+            .frame(width: metrics.portraitMediaWidth(maxPhone: metrics.isNarrow ? 340 : 370, maxPad: 520, reservedHeight: metrics.isLandscape ? 120 : 138))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Session wrap video")
             .accessibilityValue("\(displayTitle), \(durationText), \(dateText)")

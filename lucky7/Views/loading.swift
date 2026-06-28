@@ -47,11 +47,13 @@ struct Loading: View {
                     // Both screens stay alive so each keeps its own navigation
                     // stack and scroll state; only the selected one is shown.
                     HomePage(isActiveTab: selectedTab == 0)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .opacity(selectedTab == 0 ? 1 : 0)
                         .allowsHitTesting(selectedTab == 0)
                         .zIndex(selectedTab == 0 ? 1 : 0)
 
                     MonitorScreen()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .opacity(selectedTab == 1 ? 1 : 0)
                         .allowsHitTesting(selectedTab == 1)
                         .zIndex(selectedTab == 1 ? 1 : 0)
@@ -159,9 +161,14 @@ struct Loading: View {
 /// swap them as needed.
 struct FloatingTabBar: View {
     @Binding var selection: Int
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    private var compactHeight: Bool {
+        verticalSizeClass == .compact
+    }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: compactHeight ? 6 : 8) {
             tabButton(index: 0, systemImage: "timer")
             tabButton(index: 1, systemImage: "calendar.badge.clock")
         }
@@ -183,9 +190,9 @@ struct FloatingTabBar: View {
             withAnimation(.easeInOut(duration: 0.2)) { selection = index }
         } label: {
             Image(systemName: systemImage)
-                .font(.system(size: 20, weight: .semibold))
+                .font(.system(size: compactHeight ? 18 : 20, weight: .semibold))
                 .foregroundColor(selection == index ? .white : .black)
-                .frame(width: 64, height: 48)
+                .frame(width: compactHeight ? 56 : 64, height: compactHeight ? 44 : 48)
                 .background(
                     Capsule().fill(selection == index ? Color(red: 9 / 255, green: 9 / 255, blue: 9 / 255) : Color.clear)
                 )
