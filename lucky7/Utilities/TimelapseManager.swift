@@ -523,14 +523,17 @@ final class TimelapseManager: NSObject {
             let applied = try profile.apply(to: input.device)
             log(
                 String(
-                    format: "powerProfile reason=%@ planned=%.0fs interval=%.2fs requestedFPS=%.0f appliedFPS=%.2f supported=%.2f...%.2f",
+                    format: "powerProfile reason=%@ planned=%.0fs interval=%.2fs requestedFPS=%.0f appliedFPS=%.2f supported=%.2f...%.2f formatChanged=%@ dimensions=%dx%d",
                     reason,
                     profile.plannedSessionSeconds,
                     profile.captureIntervalSeconds,
                     applied.requestedFPS,
                     applied.appliedFPS,
                     applied.minSupportedFPS,
-                    applied.maxSupportedFPS
+                    applied.maxSupportedFPS,
+                    applied.formatChanged ? "yes" : "no",
+                    applied.width,
+                    applied.height
                 )
             )
         } catch {

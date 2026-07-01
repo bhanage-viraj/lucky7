@@ -93,31 +93,25 @@ final class ExportEngine {
                     try FileManager.default.removeItem(at: outputURL)
                 }
 
-                guard let exportSession = AVAssetExportSession(
-                    asset: composition,
-                    presetName: AVAssetExportPresetHighestQuality
-                ) else {
-                    await MainActor.run { completion(nil) }
-                    return
-                }
-
-                exportSession.outputURL = outputURL
-                exportSession.outputFileType = .mp4
-                exportSession.shouldOptimizeForNetworkUse = true
-
-                exportSession.videoComposition = try await makePortraitVideoComposition(
+                let videoComposition = try await makePortraitVideoComposition(
                     for: composition,
                     sourceVideoTrack: videoTrack,
                     overlay: overlay
                 )
 
-                await exportSession.export()
+                let ok = await exportCompressed(
+                    composition: composition,
+                    videoComposition: videoComposition,
+                    to: outputURL,
+                    bitRate: AppConstants.finalVideoAverageBitRate
+                )
 
                 await MainActor.run {
-                    if exportSession.status == .completed {
+                    if ok {
+                        let megabytes = Self.fileSizeMegabytes(outputURL)
+                        print(String(format: "ExportEngine: final wrap ok %.2f MB", megabytes))
                         completion(outputURL)
                     } else {
-                        print("ExportEngine: export failed – \(exportSession.error?.localizedDescription ?? "unknown")")
                         completion(nil)
                     }
                 }
@@ -218,14 +212,19 @@ final class ExportEngine {
                 for: composition, sourceVideoTrack: videoTrack, overlay: nil
             )
 
-            return await export(composition: composition, videoComposition: videoComposition, to: outputURL)
+            return await exportCompressed(
+                composition: composition,
+                videoComposition: videoComposition,
+                to: outputURL,
+                bitRate: AppConstants.finalVideoAverageBitRate
+            )
         } catch {
             print("ExportEngine.generateCleanSlice: \(error.localizedDescription)")
             return false
         }
     }
 
-    /// Concatenates the temporary (already 1080×1920, text-free, 60 fps) per-session slices into one
+    /// Concatenates the temporary portrait-normalized per-session slices into one
     /// video and burns a single period-level overlay (total focus time / period label /
     /// footer). Each clip is trimmed so the whole recap never exceeds `maxDurationSeconds`.
     func generatePeriodWrap(
@@ -235,7 +234,7 @@ final class ExportEngine {
         outputURL: URL
     ) async -> Bool {
         guard !clipURLs.isEmpty else { return false }
-        let renderSize = CGSize(width: 1080, height: 1920)
+        let renderSize = AppConstants.finalRenderSize
         // Share the budget evenly so every session is represented within the cap.
         let perClipSeconds = maxDurationSeconds / Double(clipURLs.count)
 
@@ -262,10 +261,10 @@ final class ExportEngine {
         }
         guard cursor > .zero else { return false }
 
-        // The slices are already 1080×1920 with identity transform, so the composition is
-        // just the overlay on top of a pass-through video layer. 60 fps via frameDuration.
+        // The slices are already portrait-normalized with identity transform, so the composition
+        // is just the overlay on top of a pass-through video layer.
         let videoComposition = AVMutableVideoComposition()
-        videoComposition.frameDuration = CMTime(value: 1, timescale: CMTimeScale(AppConstants.wrappedOutputFPS))
+        videoComposition.frameDuration = CMTime(value: 1, timescale: CMTimeScale(AppConstants.finalRenderFPS))
         videoComposition.renderSize = renderSize
 
         let instruction = AVMutableVideoCompositionInstruction()
@@ -284,29 +283,149 @@ final class ExportEngine {
             postProcessingAsVideoLayer: videoLayer, in: parentLayer
         )
 
-        return await export(composition: composition, videoComposition: videoComposition, to: outputURL)
+        return await exportCompressed(
+            composition: composition,
+            videoComposition: videoComposition,
+            to: outputURL,
+            bitRate: AppConstants.finalVideoAverageBitRate
+        )
     }
 
-    private func export(
+    private func exportCompressed(
         composition: AVComposition,
         videoComposition: AVMutableVideoComposition,
-        to outputURL: URL
+        to outputURL: URL,
+        bitRate: Int
     ) async -> Bool {
         if FileManager.default.fileExists(atPath: outputURL.path) {
             try? FileManager.default.removeItem(at: outputURL)
         }
-        guard let session = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
+
+        guard let videoTrack = composition.tracks(withMediaType: .video).first else {
+            print("ExportEngine.exportCompressed failed: missing video track")
             return false
         }
-        session.outputURL = outputURL
-        session.outputFileType = .mp4
-        session.shouldOptimizeForNetworkUse = true
-        session.videoComposition = videoComposition
-        await session.export()
-        if session.status != .completed {
-            print("ExportEngine.export failed: \(session.error?.localizedDescription ?? "unknown")")
+
+        do {
+            let reader = try AVAssetReader(asset: composition)
+            let readerOutput = AVAssetReaderVideoCompositionOutput(
+                videoTracks: [videoTrack],
+                videoSettings: [
+                    kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+                ]
+            )
+            readerOutput.videoComposition = videoComposition
+            readerOutput.alwaysCopiesSampleData = false
+
+            guard reader.canAdd(readerOutput) else {
+                print("ExportEngine.exportCompressed failed: reader cannot add output")
+                return false
+            }
+            reader.add(readerOutput)
+
+            let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
+            let renderSize = videoComposition.renderSize
+            let writerInput = AVAssetWriterInput(
+                mediaType: .video,
+                outputSettings: [
+                    AVVideoCodecKey: AVVideoCodecType.h264,
+                    AVVideoWidthKey: Int(renderSize.width),
+                    AVVideoHeightKey: Int(renderSize.height),
+                    AVVideoCompressionPropertiesKey: [
+                        AVVideoAverageBitRateKey: bitRate,
+                        AVVideoExpectedSourceFrameRateKey: Int(AppConstants.finalRenderFPS),
+                        AVVideoMaxKeyFrameIntervalKey: Int(AppConstants.finalRenderFPS * 2),
+                        AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel
+                    ]
+                ]
+            )
+            writerInput.expectsMediaDataInRealTime = false
+
+            guard writer.canAdd(writerInput) else {
+                print("ExportEngine.exportCompressed failed: writer cannot add input")
+                return false
+            }
+            writer.add(writerInput)
+
+            guard reader.startReading() else {
+                print("ExportEngine.exportCompressed reader failed: \(reader.error?.localizedDescription ?? "unknown")")
+                return false
+            }
+            guard writer.startWriting() else {
+                reader.cancelReading()
+                print("ExportEngine.exportCompressed writer failed: \(writer.error?.localizedDescription ?? "unknown")")
+                return false
+            }
+            writer.startSession(atSourceTime: .zero)
+
+            let success: Bool = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                let queue = DispatchQueue(label: "com.lucky7.export.compressed")
+                var didFinish = false
+
+                func finish(_ ok: Bool) {
+                    guard !didFinish else { return }
+                    didFinish = true
+
+                    if !ok {
+                        reader.cancelReading()
+                        writer.cancelWriting()
+                        continuation.resume(returning: false)
+                        return
+                    }
+
+                    writerInput.markAsFinished()
+                    writer.finishWriting {
+                        let completed = writer.status == .completed && reader.status == .completed
+                        if !completed {
+                            print("ExportEngine.exportCompressed failed reader=\(reader.status.rawValue) writer=\(writer.status.rawValue) readerError=\(reader.error?.localizedDescription ?? "nil") writerError=\(writer.error?.localizedDescription ?? "nil")")
+                        }
+                        continuation.resume(returning: completed)
+                    }
+                }
+
+                writerInput.requestMediaDataWhenReady(on: queue) {
+                    while writerInput.isReadyForMoreMediaData {
+                        guard let sampleBuffer = readerOutput.copyNextSampleBuffer() else {
+                            finish(reader.status == .completed)
+                            return
+                        }
+
+                        if !writerInput.append(sampleBuffer) {
+                            print("ExportEngine.exportCompressed append failed: \(writer.error?.localizedDescription ?? "unknown")")
+                            finish(false)
+                            return
+                        }
+                    }
+                }
+            }
+
+            if success {
+                print(
+                    String(
+                        format: "ExportEngine.exportCompressed ok %.0fx%.0f %.0ffps %.1fMbps %.2fMB",
+                        renderSize.width,
+                        renderSize.height,
+                        AppConstants.finalRenderFPS,
+                        Double(bitRate) / 1_000_000,
+                        Self.fileSizeMegabytes(outputURL)
+                    )
+                )
+            } else {
+                try? FileManager.default.removeItem(at: outputURL)
+            }
+
+            return success
+        } catch {
+            print("ExportEngine.exportCompressed error: \(error.localizedDescription)")
+            try? FileManager.default.removeItem(at: outputURL)
+            return false
         }
-        return session.status == .completed
+    }
+
+    private static func fileSizeMegabytes(_ url: URL) -> Double {
+        let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?
+            .doubleValue ?? 0
+        return bytes / 1_000_000
     }
 
     // MARK: - Portrait output + overlay
@@ -327,9 +446,9 @@ final class ExportEngine {
         overlay: WrappedVideoOverlay?
     ) async throws -> AVMutableVideoComposition {
         // Export in portrait 9:16 always. Portrait inputs fill; landscape inputs letterbox.
-        let renderSize = CGSize(width: 1080, height: 1920)
+        let renderSize = AppConstants.finalRenderSize
         let videoComposition = AVMutableVideoComposition()
-        videoComposition.frameDuration = CMTime(value: 1, timescale: CMTimeScale(AppConstants.wrappedOutputFPS))
+        videoComposition.frameDuration = CMTime(value: 1, timescale: CMTimeScale(AppConstants.finalRenderFPS))
         videoComposition.renderSize = renderSize
 
         // Compute an oriented rect for the source track.
