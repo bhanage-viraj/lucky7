@@ -11,8 +11,6 @@ import SwiftUI
 struct BarChartConfig {
     var primaryColor: Color = .blue
     var secondaryColor: Color = .orange
-    var labelColor: Color = .secondary
-    var gridColor: Color = .secondary.opacity(0.3)
     var primaryLabel: String = "Focused"
     var secondaryLabel: String = "Distracted"
     var maxValue: Double = 120

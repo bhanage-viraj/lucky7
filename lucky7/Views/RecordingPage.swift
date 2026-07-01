@@ -88,12 +88,11 @@ struct RecordingPage: View {
             // and morphs it into the circle itself, so we draw no camera here.
             if !embedded {
                 GeometryReader { geo in
-                    let compactExpanded = isExpanded && geo.size.width > geo.size.height && geo.size.height < 520
-                    let circleSize: CGFloat = compactExpanded ? 118 : 164
+                    let circleSize: CGFloat = 164
                     let cameraW: CGFloat = isExpanded ? circleSize : geo.size.width
                     let cameraH: CGFloat = isExpanded ? circleSize : geo.size.height
                     let camCenterY: CGFloat = isExpanded
-                        ? geo.safeAreaInsets.top + (compactExpanded ? 104 : 168)
+                        ? geo.safeAreaInsets.top + 168
                         : geo.size.height / 2
 
                     ZStack {
@@ -493,161 +492,146 @@ struct RecordingPage: View {
 
     @ViewBuilder
     private var expandedSessionOverlay: some View {
-        ResponsiveReader { metrics in
-            let compact = metrics.isLandscape && metrics.isShort
-            let circleSize: CGFloat = compact ? 118 : 164
-            let timerScale: CGFloat = compact ? 0.78 : 1
+        VStack(spacing: 0) {
+            Color.clear.frame(height: 24)
 
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 0) {
-                    Color.clear.frame(height: metrics.safeArea.top + (compact ? 8 : 24))
-
-                    // Paused badge (top-left)
-                    HStack {
-                        Text("PAUSED")
-                            .foregroundStyle(.white)
-                            .font(.system(size: 14))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(
-                                Capsule()
-                                    .fill(Color(.canvasRed))
-                            )
-                            .opacity(sessionTimer.isRunning ? 0 : 1)
-                            .accessibilityHidden(sessionTimer.isRunning)
-                            .accessibilityLabel("Paused")
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.horizontal, 12)
-
-                    Color.clear.frame(height: compact ? 16 : 40)
-
-                    // Space for the camera circle (rendered in the camera layer)
-                    Color.clear.frame(height: circleSize)
-
-                    // Traffic-light timer
-                    ZStack(alignment: .center) {
-                        if !sessionTimer.isRunning {
-                            Image(.redYellowGreen)
-                                .frame(height: 136)
-                                .accessibilityDecorative()
-                        }
-
-                        Image(.trafficLight)
-                            .accessibilityDecorative()
-
-                        HStack {
-                            Text("\(sessionTimer.hours)")
-                                .font(.custom("Special Gothic Expanded One", size: 34))
-                                .frame(width: 104, height: 102)
-
-                            Text(String(format: "%02d", sessionTimer.minutes))
-                                .font(.custom("Special Gothic Expanded One", size: 34))
-                                .frame(width: 104, height: 102)
-
-                            Text(String(format: "%02d", sessionTimer.seconds))
-                                .font(.custom("Special Gothic Expanded One", size: 34))
-                                .frame(width: 110, height: 102)
-                                .clipped()
-                        }
-                        .foregroundStyle(.white)
-                        .frame(height: 136)
-                        .zIndex(2.0)
-                        .offset(y: -8)
-                    }
-                    .scaleEffect(timerScale)
-                    .frame(height: 136 * timerScale)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Time remaining")
-                    .accessibilityValue(AccessibilitySupport.spokenCountdown(
-                        hours: sessionTimer.hours,
-                        minutes: sessionTimer.minutes,
-                        seconds: sessionTimer.seconds
-                    ))
-                    .accessibilityAddTraits(.updatesFrequently)
-                    .padding(.top, compact ? 18 : 36)
-
-                    Spacer(minLength: compact ? 12 : 24)
-
-                    VStack(alignment: .center) {
-                        Text("Tips:")
-                        Text("Don't forget to take break")
-                    }
-                    .opacity(compact ? 0 : 0.5)
+            // Paused badge (top-left)
+            HStack {
+                Text("PAUSED")
                     .foregroundStyle(.white)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Tip: Don't forget to take a break")
-
-                    Spacer(minLength: compact ? 12 : 24)
-
-                    // Bottom control bar — same actions as minimized, different style
-                    HStack {
-                        // STOP
-                        Button(action: {
-                            withAnimation(.easeInOut(duration: 0.2)) { showEndConfirm = true }
-                        }) {
-                            ZStack {
-                                Circle()
-                                    .fill(.white.opacity(0.75))
-                                    .frame(width: compact ? 50 : 56, height: compact ? 50 : 56)
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(.red)
-                                    .frame(width: 20, height: 20)
-                            }
-                        }
-                        .frame(minWidth: 44, minHeight: 44)
-                        .accessibilityLabel("End session")
-                        .accessibilityHint("Stops recording and ends your focus session early")
-                        .accessibilityInputLabels(["stop", "end session", "stop recording"])
-
-                        Spacer()
-
-                        // PAUSE / RESUME (uses the unified togglePauseResume)
-                        Button(action: togglePauseResume) {
-                            ZStack {
-                                Circle()
-                                    .fill(.white.opacity(0.75))
-                                    .frame(width: compact ? 78 : 100, height: compact ? 78 : 100)
-                                Image(systemName: sessionTimer.isRunning ? "pause.fill" : "play.fill")
-                                    .font(.system(size: compact ? 30 : 36))
-                                    .foregroundStyle(.black)
-                            }
-                        }
-                        .frame(minWidth: 44, minHeight: 44)
-                        .accessibilityLabel(sessionTimer.isRunning ? "Pause session" : "Resume session")
-                        .accessibilityInputLabels(sessionTimer.isRunning ? ["pause"] : ["resume", "play"])
-                        .disabled(isPauseResumeTransitioning)
-                        .opacity(isPauseResumeTransitioning ? 0.65 : 1)
-
-                        Spacer()
-
-                        // MINIMIZE — shrink back to the recording page layout
-                        Button(action: {
-                            withAnimation(focusTransition) {
-                                isExpanded = false
-                            }
-                        }) {
-                            ZStack {
-                                Circle()
-                                    .fill(.white.opacity(0.75))
-                                    .frame(width: compact ? 50 : 56, height: compact ? 50 : 56)
-                                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                    .font(.system(size: 18))
-                                    .foregroundStyle(.black)
-                            }
-                        }
-                        .frame(minWidth: 44, minHeight: 44)
-                        .accessibilityLabel("Exit full focus mode")
-                        .accessibilityHint("Returns to the standard recording layout")
-                        .accessibilityInputLabels(["minimize", "exit focus", "collapse"])
-                    }
-                    .frame(maxWidth: metrics.isPad ? 520 : .infinity)
-                    .padding(.horizontal, metrics.horizontalPadding)
-
-                    Color.clear.frame(height: max(metrics.safeArea.bottom, compact ? 8 : 16))
-                }
-                .frame(minHeight: metrics.height)
+                    .font(.system(size: 14))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(Color(.canvasRed))
+                    )
+                    .opacity(sessionTimer.isRunning ? 0 : 1)
+                    .accessibilityHidden(sessionTimer.isRunning)
+                    .accessibilityLabel("Paused")
             }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.horizontal, 12)
+
+            Color.clear.frame(height: 40)
+
+            // Space for the camera circle (rendered in the camera layer)
+            Color.clear.frame(height: 164)
+
+            // Traffic-light timer
+            ZStack(alignment: .center) {
+                if !sessionTimer.isRunning {
+                    Image(.redYellowGreen)
+                        .frame(height: 136)
+                        .accessibilityDecorative()
+                }
+
+                Image(.trafficLight)
+                    .accessibilityDecorative()
+
+                HStack {
+                    Text("\(sessionTimer.hours)")
+                        .font(.custom("Special Gothic Expanded One", size: 34))
+                        .frame(width: 104, height: 102)
+
+                    Text(String(format: "%02d", sessionTimer.minutes))
+                        .font(.custom("Special Gothic Expanded One", size: 34))
+                        .frame(width: 104, height: 102)
+
+                    Text(String(format: "%02d", sessionTimer.seconds))
+                        .font(.custom("Special Gothic Expanded One", size: 34))
+                        .frame(width: 110, height: 102)
+                        .clipped()
+                }
+                .foregroundStyle(.white)
+                .frame(height: 136)
+                .zIndex(2.0)
+                .offset(y: -8)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Time remaining")
+            .accessibilityValue(AccessibilitySupport.spokenCountdown(
+                hours: sessionTimer.hours,
+                minutes: sessionTimer.minutes,
+                seconds: sessionTimer.seconds
+            ))
+            .accessibilityAddTraits(.updatesFrequently)
+            .padding(.top, 36)
+
+            Spacer()
+
+            VStack(alignment: .center) {
+                Text("Tips:")
+                Text("Don't forget to take break")
+            }
+            .opacity(0.5)
+            .foregroundStyle(.white)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Tip: Don't forget to take a break")
+
+            Spacer()
+
+            // Bottom control bar — same actions as minimized, different style
+            HStack {
+                // STOP
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) { showEndConfirm = true }
+                }) {
+                    ZStack {
+                        Circle()
+                            .fill(.white.opacity(0.75))
+                            .frame(width: 56, height: 56)
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(.red)
+                            .frame(width: 20, height: 20)
+                    }
+                }
+                .accessibilityLabel("End session")
+                .accessibilityHint("Stops recording and ends your focus session early")
+                .accessibilityInputLabels(["stop", "end session", "stop recording"])
+
+                Spacer()
+
+                // PAUSE / RESUME (uses the unified togglePauseResume)
+                Button(action: togglePauseResume) {
+                    ZStack {
+                        Circle()
+                            .fill(.white.opacity(0.75))
+                            .frame(width: 100, height: 100)
+                        Image(systemName: sessionTimer.isRunning ? "pause.fill" : "play.fill")
+                            .font(.system(size: 36))
+                            .foregroundStyle(.black)
+                    }
+                }
+                .accessibilityLabel(sessionTimer.isRunning ? "Pause session" : "Resume session")
+                .accessibilityInputLabels(sessionTimer.isRunning ? ["pause"] : ["resume", "play"])
+                .disabled(isPauseResumeTransitioning)
+                .opacity(isPauseResumeTransitioning ? 0.65 : 1)
+
+                Spacer()
+
+                // MINIMIZE — shrink back to the recording page layout
+                Button(action: {
+                    withAnimation(focusTransition) {
+                        isExpanded = false
+                    }
+                }) {
+                    ZStack {
+                        Circle()
+                            .fill(.white.opacity(0.75))
+                            .frame(width: 56, height: 56)
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.black)
+                    }
+                }
+                .accessibilityLabel("Exit full focus mode")
+                .accessibilityHint("Returns to the standard recording layout")
+                .accessibilityInputLabels(["minimize", "exit focus", "collapse"])
+            }
+            .padding(.horizontal, 24)
+
+            Color.clear.frame(height: 16)
         }
     }
 
@@ -956,85 +940,82 @@ struct EndSessionConfirm: View {
     let onCancel: () -> Void
 
     var body: some View {
-        ResponsiveReader { metrics in
-            ZStack(alignment: .bottom) {
-                Color.black.opacity(0.4)
-                    .ignoresSafeArea()
-                    .onTapGesture(perform: onCancel)
-                    .accessibilityHidden(true)
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .onTapGesture(perform: onCancel)
+                .accessibilityHidden(true)
 
-                VStack(spacing: 0) {
-                    Capsule()
-                        .fill(Color.black.opacity(0.18))
-                        .frame(width: 38, height: 5)
-                        .padding(.top, 10)
+            VStack(spacing: 0) {
+                Capsule()
+                    .fill(Color.black.opacity(0.18))
+                    .frame(width: 38, height: 5)
+                    .padding(.top, 10)
 
-                    HStack {
-                        Spacer()
-                        Button(action: onCancel) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(Color.black.opacity(0.55))
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Close")
-                        .accessibilityHint("Cancels ending the session")
+                HStack {
+                    Spacer()
+                    Button(action: onCancel) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Color.black.opacity(0.55))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 6)
-
-                    Text("End Session")
-                        .font(.custom("Special Gothic Expanded One", size: 22))
-                        .foregroundStyle(.black)
-                        .padding(.top, 2)
-
-                    Text("Ending now will stop recording\nand end your session early")
-                        .font(.system(size: 17, weight: .regular))
-                        .foregroundStyle(Color.black.opacity(0.8))
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 10)
-
-                    HStack(spacing: 14) {
-                        Button(action: onEnd) {
-                            Text("END")
-                                .font(.system(size: 15, weight: .bold))
-                                .foregroundStyle(.red)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 50)
-                                .overlay(Capsule().stroke(Color.red, lineWidth: 1.5))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("End session now")
-                        .accessibilityHint("Stops recording and ends your focus session early")
-                        .accessibilityInputLabels(["end", "confirm end", "stop session"])
-
-                        Button(action: onCancel) {
-                            Text("CANCEL")
-                                .font(.system(size: 15, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 50)
-                                .background(Color.black, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Cancel")
-                        .accessibilityHint("Continues your current session")
-                        .accessibilityInputLabels(["cancel", "keep going", "go back"])
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 22)
-                    .padding(.bottom, 22)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
+                    .accessibilityHint("Cancels ending the session")
                 }
-                .frame(maxWidth: metrics.isPad ? 420 : .infinity)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-                .padding(.horizontal, metrics.horizontalPadding)
-                .padding(.bottom, max(28, metrics.safeArea.bottom + 12))
-                .shadow(color: .black.opacity(0.2), radius: 20, y: 8)
-                .accessibilityElement(children: .contain)
-                .accessibilityAddTraits(.isModal)
+                .padding(.horizontal, 18)
+                .padding(.top, 6)
+
+                Text("End Session")
+                    .font(.custom("Special Gothic Expanded One", size: 22))
+                    .foregroundStyle(.black)
+                    .padding(.top, 2)
+
+                Text("Ending now will stop recording\nand end your session early")
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundStyle(Color.black.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 10)
+
+                HStack(spacing: 14) {
+                    Button(action: onEnd) {
+                        Text("END")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.red)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                            .overlay(Capsule().stroke(Color.red, lineWidth: 1.5))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("End session now")
+                    .accessibilityHint("Stops recording and ends your session early")
+                    .accessibilityInputLabels(["end", "confirm end", "stop session"])
+
+                    Button(action: onCancel) {
+                        Text("CANCEL")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                            .background(Color.black, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Cancel")
+                    .accessibilityHint("Continues your current session")
+                    .accessibilityInputLabels(["cancel", "keep going", "go back"])
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 22)
+                .padding(.bottom, 22)
             }
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .padding(.horizontal, 20)
+            .padding(.bottom, 28)
+            .shadow(color: .black.opacity(0.2), radius: 20, y: 8)
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isModal)
         }
     }
 }

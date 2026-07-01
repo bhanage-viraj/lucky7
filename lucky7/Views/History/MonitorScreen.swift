@@ -18,48 +18,90 @@ struct MonitorScreen: View {
     /// 7-day weeks. A week that straddles a month boundary is kept whole and filed
     /// under the month most of its sessions fall in, so there's no stray fragment week.
     private var monthGroups: [MonthGroup] {
-        HistoryTimelineViewModel.monthGroups(from: sessions)
+        let calendar = Calendar.current
+        let now = Date()
+        let currentMonthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now))
+        let currentWeekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start
+
+        // 1. Group sessions into real 7-day calendar weeks.
+        let byWeekStart = Dictionary(grouping: sessions) { session -> Date in
+            calendar.dateInterval(of: .weekOfYear, for: session.startTime)?.start ?? session.startTime
+        }
+
+        // 2. For each week, choose the month most of its sessions land in (ties -> later month).
+        let pendingWeeks = byWeekStart.map { (weekStart, weekSessions) -> (weekStart: Date, monthStart: Date, sessions: [Session], total: TimeInterval, isCurrent: Bool) in
+            let sorted = weekSessions.sorted { $0.startTime > $1.startTime }
+            let total = sorted.reduce(0) { $0 + $1.actualDuration }
+            let byMonth = Dictionary(grouping: sorted) { session in
+                calendar.date(from: calendar.dateComponents([.year, .month], from: session.startTime)) ?? session.startTime
+            }
+            let monthStart = byMonth.max {
+                $0.value.count != $1.value.count ? $0.value.count < $1.value.count : $0.key < $1.key
+            }?.key ?? weekStart
+            return (weekStart, monthStart, sorted, total, weekStart == currentWeekStart)
+        }
+
+        // 3. Bucket weeks by month; number them oldest-first, display newest-first.
+        let byMonth = Dictionary(grouping: pendingWeeks) { $0.monthStart }
+
+        return byMonth.keys.sorted(by: >).map { monthStart in
+            let weeksAsc = (byMonth[monthStart] ?? []).sorted { $0.weekStart < $1.weekStart }
+            let weeks: [WeekGroup] = weeksAsc.enumerated()
+                .map { index, week in
+                    WeekGroup(
+                        id: week.weekStart,
+                        number: index + 1,
+                        sessions: week.sessions,
+                        totalDuration: week.total,
+                        isCurrent: week.isCurrent
+                    )
+                }
+                .sorted { $0.id > $1.id }
+            let monthTotal = weeksAsc.reduce(0) { $0 + $1.total }
+            return MonthGroup(
+                id: monthStart,
+                weeks: weeks,
+                totalDuration: monthTotal,
+                isCurrentMonth: monthStart == currentMonthStart
+            )
+        }
     }
 
     var body: some View {
         NavigationStack {
-            ResponsiveReader { metrics in
-                ZStack(alignment: .top) {
-                    AdaptivePatternBackground(yOffset: 10)
+            ZStack {
+                Color("CanvasBlue")
+                    .ignoresSafeArea()
 
-                    VStack(spacing: 0) {
-                        header(metrics: metrics)
+                Image("PatternBackground")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea()
+                    .offset(y: 10)
 
-                        if monthGroups.isEmpty {
-                            Spacer(minLength: 0)
-                        } else {
-                            feed(metrics: metrics)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                VStack(spacing: 0) {
+                    header
 
                     if monthGroups.isEmpty {
-                        emptyStateLayer(metrics: metrics)
-                            .padding(.horizontal, metrics.horizontalPadding)
-                            .zIndex(1)
-                            .allowsHitTesting(false)
+                        emptyState
+                    } else {
+                        feed
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .overlay {
-                    if weeklyNotReady {
-                        WrapNotReadyModal(
-                            title: "Not ready yet",
-                            message: "Your weekly analytics isn't ready yet. Please wait until the end of the week.",
-                            onDismiss: { weeklyNotReady = false }
-                        )
-                    }
+            }
+            .overlay {
+                if weeklyNotReady {
+                    WrapNotReadyModal(
+                        title: "Not ready yet",
+                        message: "Your weekly analytics isn't ready yet. Please wait until the end of the week.",
+                        onDismiss: { weeklyNotReady = false }
+                    )
                 }
-                .toolbar(.hidden, for: .navigationBar)
-                .navigationDestination(isPresented: $showSearch) {
-                    SessionSearchView()
-                        .hidesFloatingTabBar()
-                }
+            }
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(isPresented: $showSearch) {
+                SessionSearchView()
             }
         }
         .task {
@@ -73,7 +115,7 @@ struct MonitorScreen: View {
 
     // MARK: - Header
 
-    private func header(metrics: ResponsiveMetrics) -> some View {
+    private var header: some View {
         HStack {
             Button {
                 showSettings = true
@@ -105,15 +147,14 @@ struct MonitorScreen: View {
             .accessibilityHint("Search by title or date")
             .accessibilityInputLabels(["search", "find session"])
         }
-        .adaptiveReadableFrame(metrics, maxWidth: metrics.prefersTwoColumns ? 1120 : (metrics.isPad ? 720 : nil))
-        .padding(.horizontal, metrics.horizontalPadding)
-        .padding(.top, max(20, metrics.safeArea.top + 8))
+        .padding(.horizontal, 24)
+        .padding(.top, 36)
         .padding(.bottom, 20)
     }
 
     // MARK: - Feed
 
-    private func feed(metrics: ResponsiveMetrics) -> some View {
+    private var feed: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 16) {
                 ForEach(monthGroups) { month in
@@ -147,75 +188,31 @@ struct MonitorScreen: View {
                     }
                 }
             }
-            .adaptiveReadableFrame(metrics, maxWidth: metrics.prefersTwoColumns ? 1120 : (metrics.isPad ? 720 : nil))
-            .padding(.horizontal, metrics.horizontalPadding)
-            .padding(.bottom, metrics.safeArea.bottom + 110)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 110)
         }
     }
 
     // MARK: - Empty state
 
-    private func emptyStateLayer(metrics: ResponsiveMetrics) -> some View {
-        Group {
-            if metrics.isLandscape {
-                emptyStateContent(metrics: metrics)
-                    .frame(width: min(metrics.width - metrics.horizontalPadding * 2, metrics.isPad ? 560 : 520))
-                    .position(x: metrics.width / 2, y: metrics.height * 0.48)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            } else {
-                VStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    emptyStateContent(metrics: metrics)
-                        .frame(maxWidth: metrics.isPad ? 560 : min(metrics.width - metrics.horizontalPadding * 2, 520))
-                    Spacer(minLength: 0)
-                }
-                .padding(.top, emptyStateTopReserve(metrics))
-                .padding(.bottom, metrics.safeArea.bottom + 128)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Spacer()
+            Image(systemName: "play.tv")
+                .font(.system(size: 36))
+                .foregroundColor(.white.opacity(0.7))
+                .accessibilityDecorative()
+            Text("No sessions yet")
+                .font(.custom("Special Gothic Expanded One", size: 23))
+                .foregroundColor(.white)
+            Text("Complete a Rush Hour session to save your \ntimelapses and reviews here.")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(.white.opacity(0.7))
+                .multilineTextAlignment(.center)
+            Spacer()
         }
-    }
-
-    private func emptyStateTopReserve(_ metrics: ResponsiveMetrics) -> CGFloat {
-        if metrics.isLandscape && !metrics.isPad { return 64 }
-        return metrics.safeArea.top + 72
-    }
-
-    private func emptyStateContent(metrics: ResponsiveMetrics) -> some View {
-        Group {
-            if metrics.isLandscape && !metrics.isPad {
-                VStack(spacing: 5) {
-                    Image(systemName: "play.tv")
-                        .font(.system(size: 24))
-                        .foregroundColor(.white.opacity(0.75))
-                        .accessibilityDecorative()
-                    Text("No sessions yet")
-                        .font(.custom("Special Gothic Expanded One", size: 17))
-                        .foregroundColor(.white)
-                    Text("Complete a Rush Hour session to save timelapses and reviews here.")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.white.opacity(0.72))
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                }
-                .padding(.horizontal, 48)
-            } else {
-                VStack(spacing: 8) {
-                    Image(systemName: "play.tv")
-                        .font(.system(size: 36))
-                        .foregroundColor(.white.opacity(0.7))
-                        .accessibilityDecorative()
-                    Text("No sessions yet")
-                        .font(.custom("Special Gothic Expanded One", size: 23))
-                        .foregroundColor(.white)
-                    Text("Complete a Rush Hour session to save your \ntimelapses and reviews here.")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.white.opacity(0.7))
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.horizontal, 40)
-            }
-        }
+        .padding(.horizontal, 40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -415,7 +412,8 @@ struct SessionRow: View {
         session.title.isEmpty ? "Untitled Session" : session.title
     }
 
-    /// Extracts a poster frame from the saved wrapped video.
+    /// Extracts a poster frame from the saved wrapped video. Raw clips are export
+    /// sources only, so sessions without a final wrap keep the placeholder.
     private func loadPosterFrame() async {
         guard posterFrame == nil, let url = posterSourceURL else { return }
         let frame = await withCheckedContinuation { continuation in

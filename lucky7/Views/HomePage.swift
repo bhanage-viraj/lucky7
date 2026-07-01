@@ -71,7 +71,6 @@ struct HomePage: View {
             GeometryReader { geo in
                 let circleSize: CGFloat = 164
                 let isCircle = sessionActive && isFocusExpanded
-                let usesCompactLandscape = !sessionActive && geo.size.width > geo.size.height && geo.size.height < 520
                 let homeScale = HomeDesign.scale(in: geo.size)
                 let homeOrigin = HomeDesign.origin(in: geo.size, scale: homeScale)
 
@@ -83,20 +82,17 @@ struct HomePage: View {
 
                 let activeCardW = max(geo.size.width - activeHInset * 2, 0)
                 let activeCardH = max(geo.size.height - activeTopInset - activeBottomInset, 0)
-                let landscapeCameraH = max(geo.size.height - safeTop - safeBottom - 32, 220)
-                let landscapeCameraW = min(landscapeCameraH * 9 / 16, geo.size.width * 0.46)
-                let homeCardW = usesCompactLandscape ? landscapeCameraW : HomeDesign.camera.width * homeScale
-                let homeCardH = usesCompactLandscape ? landscapeCameraH : HomeDesign.camera.height * homeScale
+                let homeCardW = HomeDesign.camera.width * homeScale
+                let homeCardH = HomeDesign.camera.height * homeScale
 
                 let cardW = sessionActive ? activeCardW : homeCardW
                 let cardH = sessionActive ? activeCardH : homeCardH
                 let homeCenter = HomeDesign.center(of: HomeDesign.camera, origin: homeOrigin, scale: homeScale)
-                let landscapeCenter = CGPoint(x: 20 + landscapeCameraW / 2, y: geo.size.height / 2)
 
                 let camW = isCircle ? circleSize : cardW
                 let camH = isCircle ? circleSize : cardH
-                let centerX = isCircle || sessionActive ? geo.size.width / 2 : (usesCompactLandscape ? landscapeCenter.x : homeCenter.x)
-                let centerY = isCircle ? safeTop + 168 : (sessionActive ? activeTopInset + activeCardH / 2 : (usesCompactLandscape ? landscapeCenter.y : homeCenter.y))
+                let centerX = isCircle || sessionActive ? geo.size.width / 2 : homeCenter.x
+                let centerY = isCircle ? safeTop + 168 : (sessionActive ? activeTopInset + activeCardH / 2 : homeCenter.y)
                 let corner: CGFloat = isCircle ? circleSize / 2 : 30
 
                 ZStack(alignment: .top) {
@@ -107,7 +103,7 @@ struct HomePage: View {
                         Image("RainbowEffect")
                             .resizable()
                             .scaledToFill()
-                            .frame(width: camW, height: min(190 * homeScale, camH * 0.34))
+                            .frame(width: camW, height: 190 * homeScale)
                             .clipped()
                             .opacity(0.9)
                             .allowsHitTesting(false)
@@ -206,6 +202,7 @@ struct HomePage: View {
 
     private func startSession() {
         guard isReadyToRecord, sessionRecording.cameraReady else { return }
+        sessionRecording.noteHomePreviewInteraction()
         tipStartSeen = true   // first session start → drop the "start" tip for good
         sessionTimer.configure(hours: hours, minutes: minutes, seconds: seconds)
         withAnimation(transition) { sessionActive = true }
@@ -366,136 +363,73 @@ private struct HomeControls: View {
 
     var body: some View {
         GeometryReader { geo in
-            let usesCompactLandscape = geo.size.width > geo.size.height && geo.size.height < 520
             let scale = HomeDesign.scale(in: geo.size)
             let origin = HomeDesign.origin(in: geo.size, scale: scale)
             let recordCenter = HomeDesign.point(HomeDesign.recordCenter, origin: origin, scale: scale)
 
             ZStack {
-                if usesCompactLandscape {
-                    compactLandscapeControls(in: geo.size)
-                } else {
-                    Button(action: {
-                        onInteraction()
-                        onSettings()
-                    }) {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: 28 * scale, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: HomeDesign.settings.width * scale, height: HomeDesign.settings.height * scale)
-                    }
-                    .buttonStyle(.plain)
-                    .position(HomeDesign.center(of: HomeDesign.settings, origin: origin, scale: scale))
-
-                    Image("Hrushhour")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: HomeDesign.logo.width * scale, height: HomeDesign.logo.height * scale)
-                        .position(HomeDesign.center(of: HomeDesign.logo, origin: origin, scale: scale))
-
-                    HomeTrafficTimer(
-                        hours: $hours,
-                        minutes: $minutes,
-                        seconds: $seconds,
-                        timerWidth: HomeDesign.timer.width * scale
-                    )
-                    .position(HomeDesign.center(of: HomeDesign.timer, origin: origin, scale: scale))
-
-                    if showSetupTip {
-                        HomePillTooltip(
-                            text: "Set up focus duration",
-                            width: HomeDesign.setupTip.width,
-                            height: HomeDesign.setupTip.height,
-                            scale: scale
-                        )
-                        .position(HomeDesign.center(of: HomeDesign.setupTip, origin: origin, scale: scale))
-                    }
-
-                    if showStartTip {
-                        HomePillTooltip(
-                            text: "Start session when you're ready",
-                            width: HomeDesign.startTip.width,
-                            height: HomeDesign.startTip.height,
-                            scale: scale
-                        )
-                        .position(HomeDesign.center(of: HomeDesign.startTip, origin: origin, scale: scale))
-                    }
-
-                    RecordButton(isReady: isReadyToRecord, scale: scale) {
-                        onInteraction()
-                        onRecord()
-                    }
-                        .disabled(!isReadyToRecord || !cameraReady)
-                        .position(recordCenter)
-
-                    FlipCameraButton(scale: scale) {
-                        onInteraction()
-                        onFlip()
-                    }
-                        .position(HomeDesign.center(of: HomeDesign.flip, origin: origin, scale: scale))
-                }
-            }
-        }
-        .ignoresSafeArea()
-        .simultaneousGesture(TapGesture().onEnded(onInteraction))
-    }
-
-    private func compactLandscapeControls(in size: CGSize) -> some View {
-        let panelX = size.width * 0.52
-        let panelWidth = max(size.width - panelX - 24, 260)
-        let controlScale = min(max(size.height / 430, 0.78), 0.95)
-        let timerWidth = min(panelWidth, 330)
-
-        return VStack(spacing: 16 * controlScale) {
-            HStack {
                 Button(action: {
                     onInteraction()
                     onSettings()
                 }) {
                     Image(systemName: "gearshape.fill")
-                        .font(.system(size: 24 * controlScale, weight: .bold))
+                        .font(.system(size: 28 * scale, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: 44, height: 44)
+                        .frame(width: HomeDesign.settings.width * scale, height: HomeDesign.settings.height * scale)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Settings")
-
-                Spacer()
+                .position(HomeDesign.center(of: HomeDesign.settings, origin: origin, scale: scale))
 
                 Image("Hrushhour")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 142 * controlScale, height: 44 * controlScale)
-            }
+                    .frame(width: HomeDesign.logo.width * scale, height: HomeDesign.logo.height * scale)
+                    .position(HomeDesign.center(of: HomeDesign.logo, origin: origin, scale: scale))
 
-            HomeTrafficTimer(
-                hours: $hours,
-                minutes: $minutes,
-                seconds: $seconds,
-                timerWidth: timerWidth
-            )
+                HomeTrafficTimer(
+                    hours: $hours,
+                    minutes: $minutes,
+                    seconds: $seconds,
+                    timerWidth: HomeDesign.timer.width * scale
+                )
+                .position(HomeDesign.center(of: HomeDesign.timer, origin: origin, scale: scale))
 
-            if showSetupTip {
-                HomePillTooltip(text: "Set up focus duration", width: 160, height: 29, scale: controlScale)
-            } else if showStartTip {
-                HomePillTooltip(text: "Start session when you're ready", width: 220, height: 29, scale: controlScale)
-            }
+                if showSetupTip {
+                    HomePillTooltip(
+                        text: "Set up focus duration",
+                        width: HomeDesign.setupTip.width,
+                        height: HomeDesign.setupTip.height,
+                        scale: scale
+                    )
+                    .position(HomeDesign.center(of: HomeDesign.setupTip, origin: origin, scale: scale))
+                }
 
-            HStack(spacing: 42 * controlScale) {
-                RecordButton(isReady: isReadyToRecord, scale: controlScale) {
+                if showStartTip {
+                    HomePillTooltip(
+                        text: "Start session when you're ready",
+                        width: HomeDesign.startTip.width,
+                        height: HomeDesign.startTip.height,
+                        scale: scale
+                    )
+                    .position(HomeDesign.center(of: HomeDesign.startTip, origin: origin, scale: scale))
+                }
+
+                RecordButton(isReady: isReadyToRecord, scale: scale) {
                     onInteraction()
                     onRecord()
                 }
                     .disabled(!isReadyToRecord || !cameraReady)
+                    .position(recordCenter)
 
-                FlipCameraButton(scale: controlScale) {
+                FlipCameraButton(scale: scale) {
                     onInteraction()
                     onFlip()
                 }
+                    .position(HomeDesign.center(of: HomeDesign.flip, origin: origin, scale: scale))
             }
         }
-        .frame(width: panelWidth)
-        .position(x: panelX + panelWidth / 2, y: size.height / 2)
+        .ignoresSafeArea()
+        .simultaneousGesture(TapGesture().onEnded(onInteraction))
     }
 }
 

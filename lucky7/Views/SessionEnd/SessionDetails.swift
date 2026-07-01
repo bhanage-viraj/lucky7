@@ -87,17 +87,26 @@ struct SessionDetails: View {
     }
 
     var body: some View {
-        ResponsiveReader { metrics in
-            ZStack {
-                AdaptivePatternBackground()
+        ZStack {
+            Color("CanvasBlue")
+                .ignoresSafeArea()
 
-                AdaptiveScrollContent(metrics: metrics, bottomPadding: 40, maxWidth: metrics.isPad ? 680 : nil) {
-                    VStack(spacing: metrics.isPad ? 28 : 24) {
-                        sessionCard
-                            .disabled(isSaving)
-                        saveButton
-                    }
+            Image("PatternBackground")
+                .resizable()
+                .scaledToFill()
+                .ignoresSafeArea()
+                .offset(y: -30)
+                .accessibilityDecorative()
+
+            ScrollView {
+                VStack(spacing: 24) {
+                    sessionCard
+                        .disabled(isSaving)
+                    saveButton
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 24)
+                .padding(.bottom, 40)
             }
         }
         .onAppear {
