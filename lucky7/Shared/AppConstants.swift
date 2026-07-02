@@ -3,11 +3,22 @@
 //  lucky7
 //
 
+import CoreGraphics
 import Foundation
 
 enum AppConstants {
     /// Final wrap plays at 60 fps (smoother timelapse).
     static let wrappedOutputFPS: Double = 60
+
+    /// Gallery/share exports render at the same cadence as the raw timelapse so
+    /// compression does not drop every other captured frame and make motion jumpy.
+    static let finalRenderFPS: Double = wrappedOutputFPS
+
+    /// Target H.264 bitrate for the final 1080x1920 wrap. 4 Mbps keeps 30 second
+    /// gallery files around 15 MB instead of the ~80 MB Highest Quality exports.
+    static let finalVideoAverageBitRate: Int = 4_000_000
+
+    static let finalRenderSize = CGSize(width: 1080, height: 1920)
 
     /// Frames in a full-length session (30 sec × 60 fps).
     static let maxFramesForFullSession: Int = 1800

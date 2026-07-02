@@ -43,8 +43,8 @@ struct BarChartView: View {
     // MARK: - Subviews
     private var legendView: some View {
         HStack(spacing: 24) {
-            LegendItemView(color: config.primaryColor, label: config.primaryLabel, labelColor: config.labelColor)
-            LegendItemView(color: config.secondaryColor, label: config.secondaryLabel, labelColor: config.labelColor)
+            LegendItemView(color: config.primaryColor, label: config.primaryLabel)
+            LegendItemView(color: config.secondaryColor, label: config.secondaryLabel)
             Spacer()
         }
     }
@@ -54,7 +54,7 @@ struct BarChartView: View {
             ForEach(config.gridLines, id: \.self) { val in
                 Text("\(val)")
                     .font(.system(size: 12))
-                    .foregroundColor(config.labelColor)
+                    .foregroundColor(.gray)
                     .frame(maxHeight: .infinity, alignment: .center)
             }
         }
@@ -65,7 +65,7 @@ struct BarChartView: View {
         VStack(spacing: 0) {
             ForEach(config.gridLines, id: \.self) { _ in
                 Divider()
-                    .background(config.gridColor)
+                    .background(Color.gray.opacity(0.3))
                     .frame(maxHeight: .infinity, alignment: .top)
             }
         }
@@ -110,7 +110,7 @@ struct BarChartView: View {
                     
                     Text(item.label)
                         .font(.system(size: 14))
-                        .foregroundColor(config.labelColor)
+                        .foregroundColor(.gray)
                         .frame(height: 24)
                 }
                 .frame(maxWidth: .infinity)

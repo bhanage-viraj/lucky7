@@ -38,14 +38,14 @@ struct SessionSearchView: View {
         // screen (it ignores ALL safe areas, keyboard included), so focusing the field can't
         // resize or offset the content. The top safe-area inset is re-added by hand so the bar
         // still sits below the status bar; results just scroll under the keyboard.
-        ResponsiveReader { metrics in
+        GeometryReader { proxy in
             ZStack(alignment: .top) {
                 Color("CanvasBlue")
 
                 Image("PatternBackground")
                     .resizable()
                     .scaledToFill()
-                    .frame(width: metrics.width, height: metrics.height)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
                     .clipped()
 
                 // Tapping any empty area dismisses the keyboard.
@@ -54,18 +54,17 @@ struct SessionSearchView: View {
                     .onTapGesture { searchFocused = false }
 
                 VStack(spacing: 0) {
-                    searchBar(metrics: metrics)
+                    searchBar
 
                     if results.isEmpty {
                         noResults
-                            .adaptiveReadableFrame(metrics, maxWidth: metrics.isPad ? 560 : nil)
                     } else {
-                        feed(metrics: metrics)
+                        feed
                     }
                 }
-                .padding(.top, max(safeTopInset, metrics.safeArea.top))
+                .padding(.top, safeTopInset)
             }
-            .frame(width: metrics.width, height: metrics.height)
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .ignoresSafeArea()
         .toolbar(.hidden, for: .navigationBar)
@@ -79,7 +78,7 @@ struct SessionSearchView: View {
 
     // MARK: - Search bar
 
-    private func searchBar(metrics: ResponsiveMetrics) -> some View {
+    private var searchBar: some View {
         HStack(spacing: 12) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
@@ -129,15 +128,14 @@ struct SessionSearchView: View {
             .accessibilityLabel("Close search")
             .accessibilityInputLabels(["close", "done"])
         }
-        .adaptiveReadableFrame(metrics, maxWidth: metrics.isPad ? 720 : nil)
-        .padding(.horizontal, metrics.horizontalPadding)
+        .padding(.horizontal, 20)
         .padding(.top, 16)
         .padding(.bottom, 20)
     }
 
     // MARK: - Results
 
-    private func feed(metrics: ResponsiveMetrics) -> some View {
+    private var feed: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 16) {
                 ForEach(results) { session in
@@ -149,9 +147,8 @@ struct SessionSearchView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .adaptiveReadableFrame(metrics, maxWidth: metrics.prefersTwoColumns ? 900 : (metrics.isPad ? 720 : nil))
-            .padding(.horizontal, metrics.horizontalPadding)
-            .padding(.bottom, metrics.safeArea.bottom + 40)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 40)
         }
         .scrollDismissesKeyboard(.immediately)
     }

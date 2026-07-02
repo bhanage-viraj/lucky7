@@ -64,49 +64,42 @@ struct OnboardingScreenTemplate<Content: View>: View {
                 }
                 .ignoresSafeArea()
 
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 0) {
-                        progressHeader
-                            .frame(maxWidth: geometry.size.width >= 700 ? 620 : .infinity)
-                            .padding(.horizontal, 24)
-                            .padding(.top, 16)
+                VStack(spacing: 0) {
+                    progressHeader
+                        .padding(.horizontal, 24)
+                        .padding(.top, 16)
 
-                        Spacer(minLength: geometry.size.height < 520 ? 12 : 20)
+                    Spacer(minLength: 20)
 
-                        Image("OnboardingContainer")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: geometry.size.width >= 700 ? 620 : .infinity)
-                            .accessibilityDecorative()
-                            .overlay {
-                                content()
-                                    .padding(.horizontal, 28)
-                                    .padding(.top, 36)
-                                    .padding(.bottom, 28)
-                            }
-                            .padding(.horizontal, 20)
-
-                        Spacer(minLength: geometry.size.height < 520 ? 12 : 20)
-
-                        Button(action: onContinue) {
-                            Text(buttonText ?? "CONTINUE")
-                                .font(.system(size: 16, weight: .heavy))
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 20)
-                                .background(Capsule().fill(Color.black))
+                    Image("OnboardingContainer")
+                        .resizable()
+                        .scaledToFit()
+                        .accessibilityDecorative()
+                        .overlay {
+                            content()
+                                .padding(.horizontal, 28)
+                                .padding(.top, 36)
+                                .padding(.bottom, 28)
                         }
-                        .disabled(isDisabled ?? false)
-                        .opacity(isDisabled ?? false ? 0.5 : 1)
-                        .frame(maxWidth: geometry.size.width >= 700 ? 520 : .infinity)
                         .padding(.horizontal, 20)
-                        .padding(.bottom, 20)
-                        .accessibilityLabel(buttonText ?? "Continue")
-                        .accessibilityHint("Step \(step) of 3")
-                        .accessibilityInputLabels(["continue", "next"])
+
+                    Spacer(minLength: 20)
+
+                    Button(action: onContinue) {
+                        Text(buttonText ?? "CONTINUE")
+                            .font(.system(size: 16, weight: .heavy))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 20)
+                            .background(Capsule().fill(Color.black))
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: geometry.size.height)
+                    .disabled(isDisabled ?? false)
+                    .opacity(isDisabled ?? false ? 0.5 : 1)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 20)
+                    .accessibilityLabel(buttonText ?? "Continue")
+                    .accessibilityHint("Step \(step) of 3")
+                    .accessibilityInputLabels(["continue", "next"])
                 }
 
                 HStack(spacing: 0) {

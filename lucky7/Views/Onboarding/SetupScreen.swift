@@ -23,22 +23,17 @@ struct SetupScreen: View {
     let onStart: (TimeInterval) -> Void
 
     var body: some View {
-        ResponsiveReader { metrics in
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: metrics.isShort ? 18 : 24) {
-                    header
-                    presetSection
-                    customSection
-                    lockSection
-                    startButton
-                }
-                .adaptiveReadableFrame(metrics, maxWidth: metrics.isPad ? 620 : nil, alignment: .center)
-                .padding(.horizontal, metrics.horizontalPadding)
-                .padding(.top, metrics.verticalPadding + metrics.safeArea.top)
-                .padding(.bottom, 32 + metrics.safeArea.bottom)
+        ScrollView {
+            VStack(spacing: 24) {
+                header
+                presetSection
+                customSection
+                lockSection
+                startButton
             }
-            .background(Color(.systemBackground).ignoresSafeArea())
+            .padding(20)
         }
+        .background(Color(.systemBackground))
         #if os(iOS)
         .familyActivityPicker(isPresented: $showPicker, selection: $focusController.selection)
         #endif
@@ -188,7 +183,6 @@ struct SetupScreen: View {
                 .tracking(1.2)
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
-                .frame(minHeight: 56)
                 .padding(.vertical, 18)
                 .background(.black, in: Capsule())
         }
