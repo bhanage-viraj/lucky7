@@ -10,10 +10,9 @@ enum AppConstants {
     /// Final wrap plays at 60 fps (smoother timelapse).
     static let wrappedOutputFPS: Double = 60
 
-    /// Gallery/share exports are rendered at 30 fps with controlled compression.
-    /// The raw timelapse timeline still uses `wrappedOutputFPS`, so 1800 captured
-    /// frames remains a 30 second wrap.
-    static let finalRenderFPS: Double = 30
+    /// Gallery/share exports render at the same cadence as the raw timelapse so
+    /// compression does not drop every other captured frame and make motion jumpy.
+    static let finalRenderFPS: Double = wrappedOutputFPS
 
     /// Target H.264 bitrate for the final 1080x1920 wrap. 4 Mbps keeps 30 second
     /// gallery files around 15 MB instead of the ~80 MB Highest Quality exports.
